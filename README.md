@@ -100,6 +100,10 @@ mod가 보내는 것은 세션 ID, 작업 폴더, 상태, 턴 번호, 턴이 끝
 | VS Code 패널 | 폴더 이름으로 VS Code 창을 앞으로 가져온 뒤 URI로 그 대화를 연다 |
 | 터미널 CLI(PhpStorm, Windows Terminal 등) | Claude 프로세스의 부모를 따라 올라가 창을 가진 앱을 앞으로 가져온다. 특정 탭까지는 고르지 못한다 |
 
+VS Code는 바깥에서 들어온 확장 URI를 열기 전에 "Allow 'Claude Code for VS Code' extension to open this URI?"를 묻는다. 처음 뜰 때 "Do not ask me again for this extension"을 체크하고 Open을 누르면 다음부터 묻지 않는다(되돌리기: 명령 팔레트의 "Extensions: Manage Authorized Extension URIs..."). 체크하면 다른 앱이나 웹 링크가 연 이 확장의 URI(Claude 탭 열기, 플러그인 설치 창 열기)도 묻지 않는다.
+
+플러그인을 VS Code·Claude Code 안에서 띄우면 `ELECTRON_RUN_AS_NODE=1`이 도우미까지 넘어가, 도우미가 연 `vscode://` 주소로 뜬 Code.exe가 Node로 실행되고 주소가 VS Code에 닿지 않는다(창 전환만 된다). `npm run dev:reload`와 도우미 실행은 이 변수를 뺀다.
+
 2초 동안 누르고 있으면 mod가 알려 준 프로세스 ID로 세션을 끝낸다(`taskkill /T /F`). 그 프로세스 이름이 `claude`일 때만 끄므로, 세션이 이미 끝나 다른 프로그램이 같은 PID를 받았다면 아무것도 하지 않는다. 프로세스 ID를 아직 모르는 세션은 건너뛴다.
 
 | 다른 액션 | 동작 |
