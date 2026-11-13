@@ -24,6 +24,8 @@ const FRAME_MS = 100;
 /** 깜빡임 반주기: 작업 중 파란 점은 느리게, 입력 대기 배경은 조금 빠르게. */
 const WORKING_BLINK_MS = 800;
 const WAITING_BLINK_MS = 600;
+/** 세션 키를 이만큼 누르고 있으면 그 세션을 강제 종료한다. */
+const KILL_HOLD_MS = 2000;
 
 // SDK는 주고받는 메시지를 이미지 본문까지 콘솔에 남긴다. 깜빡임마다 쌓이지 않게 끈다.
 if (!process.env.CLANZI_DEBUG) {
@@ -40,6 +42,14 @@ interface KeyState {
   lastImage: string;
 }
 
+/** 누르고 있는 세션 키. 2초를 채우면 fired. */
+interface Hold {
+  sessionId: string;
+  startedAt: number;
+  fired: boolean;
+  timer: NodeJS.Timeout;
+}
+
 const pluginPath = Utils.getPluginPath();
 const log = createLogger(join(pluginPath, 'logs'));
 const keys = new Map<string, KeyState>();
@@ -50,6 +60,8 @@ const titles = new TitleCache(join(homedir(), '.claude', 'projects'));
 let assignment = new Map<string, number>();
 const slotMemory = new SlotMemory(join(pluginPath, 'state', 'slots.json'));
 const focus = new FocusHelper(join(pluginPath, 'scripts', 'focus-helper.ps1'), log);
+/** 키 context → 누르고 있는 상태 */
+const presses = new Map<string, Hold>();
 
 log('start', { node: process.version, pluginPath });
 
@@ -112,20 +124,33 @@ $UD.onSetActive((msg) => {
   if (msg.active) draw(msg.context, state, Date.now(), true);
 });
 
-// 세션 키를 누르면 그 세션의 창으로 이동하고, 완료·오류 표시였다면 확인 처리한다.
-$UD.onRun((msg) => {
+// 세션 키: 짧게 누르면 그 세션의 창으로 이동(완료·오류 표시는 확인 처리), 2초 누르고 있으면 그 세션을 강제 종료한다.
+// Studio는 run을 누르는 순간 보내 짧게·길게를 가를 수 없으므로 keydown/keyup으로 판단한다.
+$UD.onKeyDown((msg) => {
   const state = upsert(msg);
   if (state.kind !== 'session') return;
   const id = sessionAt(state.slot);
-  const session = id ? sessions.get(id) : undefined;
-  if (!session) return;
-  if (sessions.acknowledge(session.id)) draw(msg.context, state, Date.now());
-  const req = focusRequestFor(session);
-  if (!req) {
-    log('focus skipped', { id: session.id.slice(0, 8), origin: session.origin ?? null });
-    return;
-  }
-  focus.request(req).then((result) => log('focus', { id: session.id.slice(0, 8), op: req.op, result }));
+  if (!id) return;
+  const hold: Hold = {
+    sessionId: id,
+    startedAt: Date.now(),
+    fired: false,
+    timer: setTimeout(() => {
+      hold.fired = true;
+      killSession(id);
+    }, KILL_HOLD_MS),
+  };
+  const prev = presses.get(msg.context);
+  if (prev) clearTimeout(prev.timer);
+  presses.set(msg.context, hold);
+});
+
+$UD.onKeyUp((msg) => {
+  const hold = presses.get(msg.context);
+  presses.delete(msg.context);
+  if (!hold) return;
+  clearTimeout(hold.timer);
+  if (!hold.fired) focusSession(hold.sessionId, msg.context);
 });
 
 $UD.onClear((msg) => {
@@ -146,6 +171,36 @@ setInterval(() => {
   const labels = sessionLabels(visible);
   for (const [context, state] of keys) draw(context, state, now, false, labels);
 }, FRAME_MS).unref();
+
+/** 짧게 눌렀을 때: 완료·오류 표시를 확인 처리하고 그 세션의 창으로 이동한다. */
+function focusSession(id: string, context: string): void {
+  const session = sessions.get(id);
+  if (!session) return;
+  const state = keys.get(context);
+  if (sessions.acknowledge(id) && state) draw(context, state, Date.now());
+  const req = focusRequestFor(session);
+  if (!req) {
+    log('focus skipped', { id: id.slice(0, 8), origin: session.origin ?? null });
+    return;
+  }
+  focus.request(req).then((result) => log('focus', { id: id.slice(0, 8), op: req.op, result }));
+}
+
+/** 2초 눌렀을 때: 그 세션의 Claude 프로세스와 하위 프로세스를 강제 종료하고 슬롯을 비운다. */
+function killSession(id: string): void {
+  const session = sessions.get(id);
+  if (!session?.pid) {
+    log('kill skipped', { id: id.slice(0, 8), reason: 'no pid' });
+    return;
+  }
+  focus.request({ op: 'kill', pid: session.pid }).then((result) => {
+    log('kill', { id: id.slice(0, 8), pid: session.pid, result });
+    if (result === 'killed') {
+      sessions.remove(id);
+      titles.forget(id);
+    }
+  });
+}
 
 function upsert(msg: ActionMessage): KeyState {
   let state = keys.get(msg.context);
@@ -170,6 +225,14 @@ function sessionAt(slot: number): string | undefined {
   return undefined;
 }
 
+/** 그 세션 키를 누르고 있는 동안의 진행률(0~1). 누르고 있지 않으면 undefined. */
+function holdProgress(sessionId: string, now: number): number | undefined {
+  for (const hold of presses.values()) {
+    if (hold.sessionId === sessionId && !hold.fired) return Math.min(1, (now - hold.startedAt) / KILL_HOLD_MS);
+  }
+  return undefined;
+}
+
 function blinkDim(now: number, halfPeriod: number): boolean {
   return Math.floor(now / halfPeriod) % 2 === 1;
 }
@@ -178,7 +241,8 @@ function renderSession(session: Session | undefined, label: string, now: number)
   if (!session) return renderSessionTile({ status: 'empty' });
   const status = SessionStore.displayStatus(session);
   const half = status === 'working' ? WORKING_BLINK_MS : WAITING_BLINK_MS;
-  return renderSessionTile({ status, label, subtitle: titles.get(session.id), dim: blinkDim(now, half) });
+  const hold = holdProgress(session.id, now);
+  return renderSessionTile({ status, label, subtitle: titles.get(session.id), dim: blinkDim(now, half), hold });
 }
 
 function render(state: KeyState, now: number, labels: ReadonlyMap<string, string>): string {

@@ -83,6 +83,10 @@ export class SessionStore {
     return [...this.sessions.values()].filter((s) => s.visibleFrom <= now).sort((a, b) => a.firstSeen - b.firstSeen);
   }
 
+  remove(id: string): void {
+    this.sessions.delete(id);
+  }
+
   all(): Session[] {
     return [...this.sessions.values()];
   }

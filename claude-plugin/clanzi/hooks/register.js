@@ -32,8 +32,8 @@ async function post($, ev, extra) {
     const sessionId = await $.session.id()
     if (!cwd) cwd = await $.session.cwd()
     if (origin === undefined) origin = (await $.env.get('CLAUDE_CODE_ENTRYPOINT')) ?? ''
-    // VS Code 세션은 창을 URI로 찾으므로 PID가 필요 없다. 터미널 세션만 한 번 알아낸다.
-    if (pid === undefined && origin !== 'claude-vscode') {
+    // PID는 터미널 세션의 창 찾기와 대시보드에서 길게 눌러 강제 종료할 때 쓴다. 한 번만 알아낸다.
+    if (pid === undefined) {
       pid = ''
       // 알아내는 즉시 보내, 세션을 열자마자 키를 눌러도 창으로 이동할 수 있게 한다.
       lookupPid($).then((found) => {

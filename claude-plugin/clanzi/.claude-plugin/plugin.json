@@ -1,6 +1,6 @@
 {
   "name": "clanzi",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Claude Code 세션 상태와 사용량을 Ulanzi D200X 대시보드(clanzi Studio 플러그인)로 보낸다",
   "author": { "name": "Steven" }
 }

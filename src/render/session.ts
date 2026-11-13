@@ -15,6 +15,8 @@ export interface SessionTileInput {
   subtitle?: string;
   /** 깜빡임의 꺼진 단계. 작업 중은 점이, 입력 대기는 배경이 어두워진다. */
   dim?: boolean;
+  /** 강제 종료하려고 누르고 있는 진행률(0~1). 빨간 테두리가 시계 방향으로 차오른다. */
+  hold?: number;
 }
 
 const LABEL_MAX_WIDTH = 164;
@@ -51,7 +53,7 @@ function palette(status: Exclude<SessionStatus, 'empty'>, dim: boolean): Palette
   }
 }
 
-export function renderSessionTile({ status, label, subtitle, dim = false }: SessionTileInput): string {
+export function renderSessionTile({ status, label, subtitle, dim = false, hold }: SessionTileInput): string {
   if (status === 'empty') {
     // 빈 슬롯은 패널 없이 검은 바탕에 점선 원 아이콘만 둔다.
     const emptyIcon = `<circle cx="98" cy="98" r="22" fill="none" stroke="${COLOR.empty}" stroke-width="4" stroke-dasharray="7 7"/>`;
@@ -61,7 +63,17 @@ export function renderSessionTile({ status, label, subtitle, dim = false }: Sess
   const p = palette(status, dim);
   const dot = p.dot ? `<circle cx="162" cy="36" r="12" fill="${p.dot}"/>` : '';
   const body = subtitle?.trim() ? labelWithSubtitle(label ?? '', subtitle, p.label) : labelOnly(label ?? '', p.label);
-  return svgDoc(KEY_SIZE, KEY_SIZE, panel(p.fill, p.stroke) + dot + body);
+  return svgDoc(KEY_SIZE, KEY_SIZE, panel(p.fill, p.stroke) + dot + body + holdRing(hold));
+}
+
+/** 패널 테두리를 따라 빨갛게 차오르는 진행 표시. 둥근 사각형(184x184, 모서리 24) 둘레 기준. */
+function holdRing(hold: number | undefined): string {
+  if (hold === undefined) return '';
+  const side = KEY_SIZE - 12;
+  const radius = 24;
+  const perimeter = 4 * (side - 2 * radius) + 2 * Math.PI * radius;
+  const filled = Math.max(0, Math.min(1, hold)) * perimeter;
+  return `<rect x="6" y="6" width="${side}" height="${side}" rx="${radius}" fill="none" stroke="${COLOR.error}" stroke-width="8" stroke-dasharray="${filled.toFixed(1)} ${perimeter.toFixed(1)}"/>`;
 }
 
 /** 폴더 이름만: 한두 줄로 세로 가운데. */

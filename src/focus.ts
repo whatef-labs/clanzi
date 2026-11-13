@@ -7,7 +7,9 @@ import type { Logger } from './log.ts';
 
 export type FocusRequest =
   | { op: 'vscode'; folder: string; session: string }
-  | { op: 'pid'; pid: number; folder: string };
+  | { op: 'pid'; pid: number; folder: string }
+  /** 그 PID가 claude 프로세스일 때만 하위 프로세스까지 강제 종료한다. */
+  | { op: 'kill'; pid: number };
 
 /** 도우미 첫 시작(형식 컴파일 포함)까지 고려한 응답 제한 시간. */
 const TIMEOUT_MS = 8000;
@@ -32,7 +34,7 @@ export class FocusHelper {
     process.on('exit', () => this.child?.kill());
   }
 
-  /** 결과 한 줄(focused:switch, focused:attach, opened, not-found, blocked, error:…, timeout)을 돌려준다. */
+  /** 결과 한 줄(focused:switch, focused:attach, opened, killed, not-claude:…, not-found, blocked, error:…, timeout)을 돌려준다. */
   request(req: FocusRequest): Promise<string> {
     const child = this.ensure();
     return new Promise((resolve) => {

@@ -1,6 +1,7 @@
 ﻿# clanzi 창 전환 도우미. 플러그인이 한 번 띄워 두고 표준 입력으로 한 줄짜리 JSON 요청을 보낸다.
 #   {"op":"vscode","folder":"clanzi","session":"<id>"}  VS Code 창을 폴더 이름으로 찾아 앞으로 가져온 뒤 그 대화를 연다
 #   {"op":"pid","pid":1234,"folder":"clanzi"}           프로세스의 부모를 따라 올라가 창을 가진 앱을 앞으로 가져온다
+#   {"op":"kill","pid":1234}                            claude 프로세스일 때만 하위 프로세스까지 강제 종료한다
 # 응답은 한 줄: focused:switch | focused:attach | opened | not-found | blocked | error:<메시지>
 # Windows는 백그라운드 프로세스의 창 전환을 막으므로, 현재 앞 창의 입력 스레드에 잠시 붙어서 전환 권한을 얻는다.
 $ErrorActionPreference = 'Stop'
@@ -158,6 +159,16 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
                 }
             }
             'pid' { $result = Focus-Result (Find-AncestorWindow ([int]$req.pid) ([string]$req.folder)) }
+            'kill' {
+                # 세션이 끝난 뒤 같은 PID를 다른 프로그램이 받았을 수 있으니 claude 프로세스일 때만 끈다.
+                $target = Get-Process -Id ([int]$req.pid) -ErrorAction SilentlyContinue
+                if (-not $target) { $result = 'not-found' }
+                elseif ($target.ProcessName -ne 'claude') { $result = 'not-claude:' + $target.ProcessName }
+                else {
+                    & taskkill.exe /PID $target.Id /T /F | Out-Null
+                    $result = if ($LASTEXITCODE -eq 0) { 'killed' } else { "error:taskkill $LASTEXITCODE" }
+                }
+            }
             default { $result = 'error:unknown op' }
         }
     } catch {

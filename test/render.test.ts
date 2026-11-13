@@ -172,3 +172,15 @@ test('data URI는 SVG MIME 접두어와 base64 본문이다', () => {
 function countCircles(svg: string): number {
   return svg.match(/<circle/g)?.length ?? 0;
 }
+
+test('세션 타일: 길게 누르는 동안 빨간 테두리가 진행률만큼 차오른다', () => {
+  const none = renderSessionTile({ status: 'working', label: 'clanzi' });
+  const half = renderSessionTile({ status: 'working', label: 'clanzi', hold: 0.5 });
+  const full = renderSessionTile({ status: 'working', label: 'clanzi', hold: 1 });
+  assert.doesNotMatch(none, new RegExp(`stroke="${COLOR.error}"`));
+  const dash = (svg: string) => svg.match(/stroke-dasharray="([\d.]+) ([\d.]+)"/)?.slice(1).map(Number) ?? [];
+  const [halfFilled, perimeter] = dash(half);
+  assert.ok(perimeter && Math.abs((halfFilled ?? 0) - perimeter / 2) < 1);
+  const [fullFilled, fullPerimeter] = dash(full);
+  assert.equal(fullFilled, fullPerimeter);
+});
