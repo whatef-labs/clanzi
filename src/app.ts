@@ -62,6 +62,8 @@ const slotMemory = new SlotMemory(join(pluginPath, 'state', 'slots.json'));
 const focus = new FocusHelper(join(pluginPath, 'scripts', 'focus-helper.ps1'), log);
 /** 키 context → 누르고 있는 상태 */
 const presses = new Map<string, Hold>();
+/** 강제 종료를 요청해 결과를 기다리는 세션. 그동안 키는 다 찬 진행 표시로 둔다. */
+const killing = new Set<string>();
 
 log('start', { node: process.version, pluginPath });
 
@@ -193,12 +195,15 @@ function killSession(id: string): void {
     log('kill skipped', { id: id.slice(0, 8), reason: 'no pid' });
     return;
   }
+  killing.add(id);
   focus.request({ op: 'kill', pid: session.pid }).then((result) => {
     log('kill', { id: id.slice(0, 8), pid: session.pid, result });
+    // 끝났으면 슬롯을 비우고, 실패했으면 원래 상태 표시로 돌아간다.
     if (result === 'killed') {
       sessions.remove(id);
       titles.forget(id);
     }
+    killing.delete(id);
   });
 }
 
@@ -225,10 +230,11 @@ function sessionAt(slot: number): string | undefined {
   return undefined;
 }
 
-/** 그 세션 키를 누르고 있는 동안의 진행률(0~1). 누르고 있지 않으면 undefined. */
+/** 그 세션 키를 누르고 있거나 종료 중일 때의 진행률(0~1). 다 찬 뒤에는 종료가 끝날 때까지 1로 둔다. 아니면 undefined. */
 function holdProgress(sessionId: string, now: number): number | undefined {
+  if (killing.has(sessionId)) return 1;
   for (const hold of presses.values()) {
-    if (hold.sessionId === sessionId && !hold.fired) return Math.min(1, (now - hold.startedAt) / KILL_HOLD_MS);
+    if (hold.sessionId === sessionId) return hold.fired ? 1 : Math.min(1, (now - hold.startedAt) / KILL_HOLD_MS);
   }
   return undefined;
 }
