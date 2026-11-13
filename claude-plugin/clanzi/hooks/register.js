@@ -15,8 +15,11 @@ let cwd = ''
 let status = 'idle'
 let turn = 0
 let rateLimits = []
-/** 사용자의 답을 기다리는 호출. 비어 있지 않으면 입력 대기. */
-const pending = new Set()
+/** 진행 중인 도구 호출. 사용자의 답을 기다리는 호출에는 waiting이 붙는다. */
+const calls = new Map()
+let nextCall = 0
+/** 진행 중인 호출과 짝을 찾지 못한 대기(MCP elicitation 등). 다음 도구 호출이 끝나거나 턴이 바뀌면 푼다. */
+let looseWaits = 0
 let beat = null
 
 async function post($, ev, extra) {
@@ -36,26 +39,27 @@ async function post($, ev, extra) {
 function reset() {
   status = 'idle'
   turn = 0
-  pending.clear()
+  looseWaits = 0
 }
 
-function wait($, key) {
-  pending.add(key)
-  if (status !== 'waiting') {
+/** 대기 중인 호출이 있으면 입력 대기, 없어지면 작업 중으로 되돌린다. 턴이 이미 끝났으면 그대로 둔다. */
+function refresh($) {
+  const waiting = looseWaits > 0 || [...calls.values()].some((c) => c.waiting)
+  if (waiting && status !== 'waiting') {
     status = 'waiting'
     post($, 'wait')
+  } else if (!waiting && status === 'waiting') {
+    status = 'working'
+    post($, 'resume')
   }
 }
 
-function resume($, key) {
-  if (!pending.delete(key) || pending.size > 0 || status !== 'waiting') return
-  status = 'working'
-  post($, 'resume')
-}
-
-/** 권한 요청과 그 도구 호출을 같은 키로 묶는다. */
-function callKey(id, tool) {
-  return id || 'tool:' + tool
+/** 권한 요청을 진행 중인 호출에 붙인다. ID가 같은 호출, 없으면 같은 도구의 가장 최근 호출. */
+function markWaiting(id, tool) {
+  const open = [...calls.values()]
+  const match = open.find((c) => id && c.id === id) ?? open.reverse().find((c) => c.tool === tool && !c.waiting)
+  if (match) match.waiting = true
+  else looseWaits += 1
 }
 
 export function register(on) {
@@ -80,7 +84,7 @@ export function register(on) {
 
   on('turn.start', async ($, e, next) => {
     turn += 1
-    pending.clear()
+    looseWaits = 0
     status = 'working'
     post($, 'turn-start')
     return next(e)
@@ -89,7 +93,7 @@ export function register(on) {
   on('turn.complete', async ($, e, next) => {
     // 서브에이전트의 턴은 본 대화의 상태를 바꾸지 않는다.
     if (e.agentId === undefined) {
-      pending.clear()
+      looseWaits = 0
       status = END_STATUS[e.reason] ?? 'done'
       post($, 'turn-end', { reason: e.reason })
     }
@@ -98,28 +102,34 @@ export function register(on) {
 
   // 권한 확인 창이 실제로 뜰 때만 온다. 자동 승인된 호출에는 오지 않는다.
   on('classic.PermissionRequest', async ($, e, next) => {
-    wait($, callKey(e.tool_use_id, e.tool_name))
+    markWaiting(e.tool_use_id, e.tool_name)
+    refresh($)
     return next(e)
   })
 
   on('classic.Elicitation', async ($, e, next) => {
-    wait($, 'elicitation:' + e.server_name)
+    looseWaits += 1
+    refresh($)
     return next(e)
   })
 
   on('classic.ElicitationResult', async ($, e, next) => {
-    resume($, 'elicitation:' + e.server_name)
+    looseWaits = Math.max(0, looseWaits - 1)
+    refresh($)
     return next(e)
   })
 
-  // 도구 호출이 끝나면(승인 후 실행, 거부, 질문에 답함) 그 호출의 대기를 푼다.
+  // 도구 호출이 끝나면(승인 후 실행, 거부, 질문에 답함) 그 호출에 붙은 대기도 사라진다.
   on('tool.call', async ($, e, next) => {
-    const key = callKey(e.tool_use_id, e.tool)
-    if (ASKS_USER.includes(e.tool)) wait($, key)
+    const token = ++nextCall
+    calls.set(token, { id: e.tool_use_id, tool: e.tool, waiting: ASKS_USER.includes(e.tool) })
+    refresh($)
     try {
       return await next(e)
     } finally {
-      resume($, key)
+      calls.delete(token)
+      looseWaits = 0
+      refresh($)
     }
   })
 
