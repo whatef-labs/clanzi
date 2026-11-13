@@ -12,7 +12,8 @@
     "dev:link": "node scripts/dev-link.mjs",
     "dev:reload": "node scripts/build.mjs && node scripts/dev-reload.mjs",
     "preview": "node scripts/preview.ts",
-    "dev:unlink": "node scripts/dev-link.mjs --remove"
+    "dev:unlink": "node scripts/dev-link.mjs --remove",
+    "dev:fake": "node scripts/dev-fake-sessions.mjs"
   },
   "engines": {
     "node": ">=22.18"
