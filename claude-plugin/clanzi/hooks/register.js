@@ -30,7 +30,11 @@ async function post($, ev, extra) {
     const sessionId = await $.session.id()
     if (!cwd) cwd = await $.session.cwd()
     if (origin === undefined) origin = (await $.env.get('CLAUDE_CODE_ENTRYPOINT')) ?? ''
-    if (pid === undefined) pid = (await $.env.get('CLAUDE_PID')) ?? ''
+    // VS Code 세션은 창을 URI로 찾으므로 PID가 필요 없다. 터미널 세션만 한 번 알아낸다.
+    if (pid === undefined && origin !== 'claude-vscode') {
+      pid = ''
+      lookupPid($).then((found) => { pid = found })
+    }
     await $.http.fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -39,6 +43,25 @@ async function post($, ev, extra) {
   } catch {
     // 브리지가 없으면 버린다. 다음 주기 신호가 상태를 다시 맞춘다.
   }
+}
+
+/** 이 Claude Code 프로세스의 PID. 하위 프로세스에 넘어가는 CLAUDE_PID를 읽고, 없으면 하위 프로세스의 부모를 조회한다. */
+async function lookupPid($) {
+  try {
+    const r = await $.process.run(['cmd', '/d', '/c', 'echo %CLAUDE_PID%'])
+    const v = r.stdout.trim()
+    if (/^\d+$/.test(v)) return v
+  } catch {
+    // cmd가 없으면 다음 방법으로
+  }
+  try {
+    const r = await $.process.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', '(Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId'])
+    const v = r.stdout.trim()
+    if (/^\d+$/.test(v)) return v
+  } catch {
+    // 찾지 못하면 창 이동만 안 될 뿐이다
+  }
+  return ''
 }
 
 function reset() {
