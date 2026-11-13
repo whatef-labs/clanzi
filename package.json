@@ -1,0 +1,29 @@
+{
+  "name": "clanzi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ulanzi D200X를 Claude Code 세션 상태·사용량 대시보드로 만드는 Ulanzi Studio 플러그인",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc -p .",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "dev:link": "node scripts/dev-link.mjs",
+    "dev:reload": "node scripts/build.mjs && node scripts/dev-reload.mjs",
+    "preview": "node scripts/preview.ts",
+    "dev:unlink": "node scripts/dev-link.mjs --remove"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "dependencies": {
+    "ws": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "@types/ws": "8.18.2",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

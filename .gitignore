@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+
+# 빌드 산출물
+com.ulanzi.clanzi.ulanziPlugin/plugin/
+com.ulanzi.clanzi.ulanziPlugin/logs/
+com.ulanzi.clanzi.ulanziPlugin/ws-port.js
+dist/
+
+*.log
+preview/

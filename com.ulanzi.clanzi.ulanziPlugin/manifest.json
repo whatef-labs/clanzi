@@ -1,0 +1,54 @@
+{
+  "Author": "Steven",
+  "Name": "Clanzi",
+  "Description": "Claude Code session status and usage dashboard",
+  "Icon": "resources/plugin-icon.svg",
+  "Version": "0.1.0",
+  "Category": "Clanzi",
+  "CategoryIcon": "resources/category-icon.svg",
+  "CodePath": "plugin/app.js",
+  "Type": "JavaScript",
+  "Inspect": "--inspect=127.0.0.1:9231",
+  "UUID": "com.ulanzi.ulanzistudio.clanzi",
+  "Actions": [
+    {
+      "Name": "Session",
+      "Icon": "resources/action-session.svg",
+      "state": 0,
+      "States": [
+        { "Name": "Empty", "Image": "resources/state-session.svg" }
+      ],
+      "Tooltip": "Shows one Claude Code session",
+      "UUID": "com.ulanzi.ulanzistudio.clanzi.session",
+      "SupportedInMultiActions": false,
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Usage",
+      "Icon": "resources/action-usage.svg",
+      "state": 0,
+      "States": [
+        { "Name": "Empty", "Image": "resources/state-usage.svg" }
+      ],
+      "Tooltip": "5-hour and weekly usage limits",
+      "UUID": "com.ulanzi.ulanzistudio.clanzi.usage",
+      "SupportedInMultiActions": false,
+      "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Waiting",
+      "Icon": "resources/action-waiting.svg",
+      "state": 0,
+      "States": [
+        { "Name": "Empty", "Image": "resources/state-waiting.svg" }
+      ],
+      "Tooltip": "Number of sessions waiting for input",
+      "UUID": "com.ulanzi.ulanzistudio.clanzi.waiting",
+      "SupportedInMultiActions": false,
+      "Controllers": ["Keypad"]
+    }
+  ],
+  "OS": [
+    { "Platform": "windows", "MinimumVersion": "10" }
+  ]
+}
