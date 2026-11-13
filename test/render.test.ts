@@ -95,6 +95,8 @@ test('세션 타일: 점·테두리·배경색으로 상태를 구분하고 문�
     assert.doesNotMatch(svg, /대기|작업 중|완료/);
     assert.equal(svg.match(/<text/g)?.length, 1);
   }
+  // 기본 배경은 채우지 않는다(검은 바탕).
+  for (const svg of [idle, on, off, waitingDim]) assert.match(svg, /<rect x="6"[^>]*fill="none"/);
 });
 
 test('세션 타일: 빈 슬롯은 라벨 없이 빈 아이콘만', () => {

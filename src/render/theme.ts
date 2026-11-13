@@ -11,7 +11,6 @@ export const COLOR = {
   idle: '#6B7280',
   working: '#3B82F6',
   waiting: '#F97316',
-  waitingDim: '#3A1D0A',
   done: '#16A34A',
 
   ok: '#22C55E',
