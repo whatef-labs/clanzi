@@ -1,5 +1,5 @@
 // 세션 슬롯 키 이미지 (196 x 196). 상태는 문구 없이 점·테두리·배경색으로만 나타낸다.
-// 대기: 회색 점, 작업 중: 파란 테두리 + 파란 점 깜빡임, 입력 대기: 주황 배경 깜빡임 + 점,
+// 대기: 회색 점, 작업 중: 파란 테두리 + 파란 점 깜빡임, 입력 대기: 주황 배경 깜빡임 + 주황 점,
 // 완료: 초록 배경, 빈 슬롯: 빈 아이콘.
 import { COLOR } from './theme.ts';
 import { fitLabel } from './label.ts';
@@ -30,12 +30,13 @@ function palette(status: Exclude<SessionStatus, 'empty'>, dim: boolean): Palette
     case 'idle':
       return { fill: COLOR.panel, stroke: COLOR.border, label: COLOR.text, dot: COLOR.idle };
     case 'working':
-      return { fill: COLOR.panel, stroke: COLOR.working, label: COLOR.text, dot: dim ? COLOR.workingDim : COLOR.working };
+      // 꺼지는 단계에서는 점을 그리지 않아 파란 점만 깜빡인다.
+      return { fill: COLOR.panel, stroke: COLOR.working, label: COLOR.text, dot: dim ? undefined : COLOR.working };
     case 'waiting':
-      // 점은 글자색을 따라가 배경이 깜빡여도 보이게 한다.
+      // 점은 항상 주황. 배경이 밝은 주황일 때는 배경에 묻힌다.
       return dim
         ? { fill: COLOR.waitingDim, stroke: COLOR.waiting, label: COLOR.waiting, dot: COLOR.waiting }
-        : { fill: COLOR.waiting, stroke: COLOR.waiting, label: COLOR.dark, dot: COLOR.dark };
+        : { fill: COLOR.waiting, stroke: COLOR.waiting, label: COLOR.dark, dot: COLOR.waiting };
     case 'done':
       return { fill: COLOR.done, stroke: COLOR.done, label: COLOR.text };
   }

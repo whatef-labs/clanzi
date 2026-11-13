@@ -78,15 +78,14 @@ test('세션 타일: 점·테두리·배경색으로 상태를 구분하고 문�
   const on = renderSessionTile({ status: 'working', label: 'clanzi' });
   const off = renderSessionTile({ status: 'working', label: 'clanzi', dim: true });
   assert.match(on, new RegExp(`<circle[^>]*fill="${COLOR.working}"`));
-  assert.match(off, new RegExp(`<circle[^>]*fill="${COLOR.workingDim}"`));
+  assert.doesNotMatch(off, /<circle/);
   for (const svg of [on, off]) assert.match(svg, new RegExp(`stroke="${COLOR.working}"`));
 
   const waiting = renderSessionTile({ status: 'waiting', label: 'clanzi' });
   const waitingDim = renderSessionTile({ status: 'waiting', label: 'clanzi', dim: true });
   assert.notEqual(waiting, waitingDim);
   assert.match(waiting, new RegExp(`fill="${COLOR.waiting}"`));
-  assert.match(waiting, new RegExp(`<circle[^>]*fill="${COLOR.dark}"`));
-  assert.match(waitingDim, new RegExp(`<circle[^>]*fill="${COLOR.waiting}"`));
+  for (const svg of [waiting, waitingDim]) assert.match(svg, new RegExp(`<circle[^>]*fill="${COLOR.waiting}"`));
 
   const done = renderSessionTile({ status: 'done', label: 'clanzi' });
   assert.match(done, new RegExp(`fill="${COLOR.done}"`));
