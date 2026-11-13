@@ -70,28 +70,32 @@ test('사용률 정규화', () => {
   assert.equal(normalizePercent(Number.NaN), null);
 });
 
-test('세션 타일: 대기·작업 중은 점, 입력 대기·완료는 배경색으로 구분하고 문구가 없다', () => {
+test('세션 타일: 점·테두리·배경색으로 상태를 구분하고 문구가 없다', () => {
   const idle = renderSessionTile({ status: 'idle', label: 'clanzi' });
   assert.match(idle, new RegExp(`<circle[^>]*fill="${COLOR.idle}"`));
+  assert.match(idle, new RegExp(`stroke="${COLOR.border}"`));
 
   const on = renderSessionTile({ status: 'working', label: 'clanzi' });
   const off = renderSessionTile({ status: 'working', label: 'clanzi', dim: true });
   assert.match(on, new RegExp(`<circle[^>]*fill="${COLOR.working}"`));
   assert.match(off, new RegExp(`<circle[^>]*fill="${COLOR.workingDim}"`));
+  for (const svg of [on, off]) assert.match(svg, new RegExp(`stroke="${COLOR.working}"`));
 
   const waiting = renderSessionTile({ status: 'waiting', label: 'clanzi' });
   const waitingDim = renderSessionTile({ status: 'waiting', label: 'clanzi', dim: true });
   assert.notEqual(waiting, waitingDim);
   assert.match(waiting, new RegExp(`fill="${COLOR.waiting}"`));
+  assert.match(waiting, new RegExp(`<circle[^>]*fill="${COLOR.dark}"`));
+  assert.match(waitingDim, new RegExp(`<circle[^>]*fill="${COLOR.waiting}"`));
 
   const done = renderSessionTile({ status: 'done', label: 'clanzi' });
   assert.match(done, new RegExp(`fill="${COLOR.done}"`));
+  assert.doesNotMatch(done, /<circle/);
 
   for (const svg of [idle, on, off, waiting, waitingDim, done]) {
     assert.doesNotMatch(svg, /대기|작업 중|완료/);
     assert.equal(svg.match(/<text/g)?.length, 1);
   }
-  for (const svg of [waiting, waitingDim, done]) assert.doesNotMatch(svg, /<circle/);
 });
 
 test('세션 타일: 빈 슬롯은 라벨 없이 빈 아이콘만', () => {
