@@ -13,7 +13,7 @@ export const SESSION_PREVIEW: SessionPreview[] = [
   { status: 'waiting', label: 'fms-api' },
   { status: 'done', label: '고객관리 리뉴얼' },
   { status: 'working', label: 'a-very-long-project-directory-name' },
-  { status: 'working', label: 'clanzi', subtitle: 'Ulanzi D200X 대시보드 플러그인 구현' },
+  { status: 'working', label: 'clanzi', subtitle: 'Clanzi 플러그인 핸드오프' },
   { status: 'error', label: 'passtrue-api', subtitle: 'API 오류로 중단' },
 ];
 

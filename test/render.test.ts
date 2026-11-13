@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gaugeColor, COLOR } from '../src/render/theme.ts';
 import { ring, esc, estimateWidth, toDataUri } from '../src/render/svg.ts';
-import { fitLabel } from '../src/render/label.ts';
+import { fitLabel, fitWrapped } from '../src/render/label.ts';
 import { formatRemaining, normalizePercent } from '../src/render/format.ts';
 import { renderSessionTile } from '../src/render/session.ts';
 import { renderUsageGauge } from '../src/render/usage.ts';
@@ -46,6 +46,14 @@ test('라벨: 짧으면 한 줄, 길면 구분자에서 두 줄, 더 길면 말�
   for (const line of long.lines) assert.ok(estimateWidth(line, long.size) <= 164, line);
 
   assert.deepEqual(fitLabel('   ', 164).lines, ['?']);
+});
+
+test('줄바꿈: 공백 단위, 들어가는 가장 큰 크기, 긴 단어는 글자 단위', () => {
+  assert.deepEqual(fitWrapped('짧은 제목', 164, [22, 20], 2), { lines: ['짧은 제목'], size: 22 });
+  const long = fitWrapped('abcdefghijklmnopqrstuvwxyzabcdefghijklmnop', 164, [22], 2);
+  assert.equal(long.lines.length, 2);
+  assert.ok(long.lines[1]?.endsWith('…'));
+  for (const line of long.lines) assert.ok(estimateWidth(line, 22) <= 164, line);
 });
 
 test('라벨: 한글 폴더 이름도 폭 안에 들어간다', () => {
@@ -109,14 +117,18 @@ test('세션 타일: 오류는 빨간 테두리와 빨간 점', () => {
   assert.match(svg, new RegExp(`<circle[^>]*fill="${COLOR.error}"`));
 });
 
-test('세션 타일: 제목이 있으면 폴더 이름 아래 작은 줄로, 넘치면 말줄임', () => {
+test('세션 타일: 제목은 폴더 이름 아래 최대 두 줄, 넘치면 말줄임', () => {
   const svg = renderSessionTile({ status: 'idle', label: 'clanzi', subtitle: 'Ulanzi D200X 대시보드 플러그인 구현과 실기기 검증' });
   const texts = [...svg.matchAll(/<text[^>]*font-size="(\d+)"[^>]*>([^<]*)<\/text>/g)].map((m) => ({ size: Number(m[1]), text: m[2] ?? '' }));
-  assert.equal(texts.length, 2);
+  assert.equal(texts.length, 3);
   assert.equal(texts[0]?.text, 'clanzi');
   assert.ok((texts[1]?.size ?? 99) < (texts[0]?.size ?? 0));
-  assert.ok(texts[1]?.text.endsWith('…'));
-  assert.ok(estimateWidth(texts[1]?.text ?? '', texts[1]?.size ?? 0) <= 164);
+  assert.ok(texts[2]?.text.endsWith('…'));
+  for (const t of texts.slice(1)) assert.ok(estimateWidth(t.text, t.size) <= 164, t.text);
+
+  const short = renderSessionTile({ status: 'idle', label: 'clanzi', subtitle: 'Clanzi 플러그인 핸드오프' });
+  const lines = [...short.matchAll(/<text[^>]*font-size="(\d+)"[^>]*>([^<]*)<\/text>/g)].map((m) => m[2]);
+  assert.deepEqual(lines, ['clanzi', 'Clanzi 플러그인', '핸드오프']);
   // 빈 제목은 없는 것과 같다
   assert.equal(renderSessionTile({ status: 'idle', label: 'clanzi', subtitle: '  ' }), renderSessionTile({ status: 'idle', label: 'clanzi' }));
 });

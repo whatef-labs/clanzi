@@ -44,6 +44,46 @@ export function fitOneLine(text: string, maxWidth: number, sizes: readonly numbe
   return { lines: [truncate(clean, (s) => estimateWidth(s, size) <= maxWidth)], size };
 }
 
+/**
+ * 공백 단위로 줄을 바꿔 maxLines 안에 넣는다. 들어가는 가장 큰 크기를 고르고,
+ * 가장 작은 크기에서도 넘치면 마지막 줄을 말줄임한다. 한 단어가 한 줄보다 길면 글자 단위로 자른다.
+ */
+export function fitWrapped(text: string, maxWidth: number, sizes: readonly number[], maxLines: number): FittedLabel {
+  const clean = text.trim().replace(/\s+/g, ' ') || '?';
+  for (const size of sizes) {
+    const lines = wrap(clean, (s) => estimateWidth(s, size) <= maxWidth);
+    if (lines.length <= maxLines) return { lines, size };
+  }
+  const size = sizes[sizes.length - 1] ?? MIN_SIZE;
+  const fits = (s: string) => estimateWidth(s, size) <= maxWidth;
+  const lines = wrap(clean, fits);
+  const kept = lines.slice(0, maxLines - 1);
+  kept.push(truncate(lines.slice(maxLines - 1).join(' '), fits));
+  return { lines: kept, size };
+}
+
+function wrap(text: string, fits: (s: string) => boolean): string[] {
+  const lines: string[] = [];
+  let current = '';
+  for (let word of text.split(' ')) {
+    const candidate = current ? current + ' ' + word : word;
+    if (fits(candidate)) {
+      current = candidate;
+      continue;
+    }
+    if (current) lines.push(current);
+    // 한 줄보다 긴 단어는 들어가는 만큼씩 잘라 낸다
+    while (!fits(word)) {
+      const head = firstLine(word, fits);
+      lines.push(head);
+      word = word.slice(head.length);
+    }
+    current = word;
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
 /** 두 줄 길이가 가장 비슷한 분할을 고른다. separatorOnly면 구분자 바로 뒤에서만 나눈다. */
 function bestSplit(text: string, ok: (a: string, b: string) => boolean, separatorOnly: boolean): string[] | null {
   const chars = [...text];

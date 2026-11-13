@@ -3,7 +3,7 @@
 // 완료: 초록 배경, 오류: 빨간 테두리 + 빨간 점, 빈 슬롯: 빈 아이콘.
 // 글자는 폴더 이름(굵게)과, 있으면 그 아래 짧은 세션 제목.
 import { COLOR } from './theme.ts';
-import { fitLabel, fitOneLine } from './label.ts';
+import { fitLabel, fitOneLine, fitWrapped } from './label.ts';
 import { KEY_SIZE, panel, svgDoc, text } from './svg.ts';
 
 export type SessionStatus = 'empty' | 'idle' | 'working' | 'waiting' | 'done' | 'error';
@@ -20,8 +20,9 @@ export interface SessionTileInput {
 const LABEL_MAX_WIDTH = 164;
 /** 라벨 블록의 세로 중심. 오른쪽 위 상태 점을 피해 가운데(98)보다 조금 아래로 둔다. */
 const LABEL_CENTER_Y = 104;
-const TITLE_SIZES = [30, 28, 26, 24, 22, 20];
-const SUBTITLE_SIZES = [18, 17, 16];
+const TITLE_SIZES = [28, 26, 24, 22, 20];
+const SUBTITLE_SIZES = [22, 21, 20];
+const SUBTITLE_MAX_LINES = 2;
 
 interface Palette {
   fill: string;
@@ -74,17 +75,20 @@ function labelOnly(label: string, fill: string): string {
     .join('');
 }
 
-/** 폴더 이름 한 줄과 그 아래 작은 제목 한 줄. */
+/** 폴더 이름 한 줄과 그 아래 제목 최대 두 줄. 블록 전체를 세로 가운데에 둔다. */
 function labelWithSubtitle(label: string, subtitle: string, fill: string): string {
   const title = fitOneLine(label, LABEL_MAX_WIDTH, TITLE_SIZES);
-  const sub = fitOneLine(subtitle, LABEL_MAX_WIDTH, SUBTITLE_SIZES);
-  const gap = 10;
-  const blockHeight = title.size + gap + sub.size;
+  const sub = fitWrapped(subtitle, LABEL_MAX_WIDTH, SUBTITLE_SIZES, SUBTITLE_MAX_LINES);
+  const gap = 8;
+  const subLineHeight = Math.round(sub.size * 1.2);
+  const blockHeight = title.size + gap + sub.lines.length * subLineHeight;
   const top = LABEL_CENTER_Y - blockHeight / 2;
   const titleBaseline = Math.round(top + title.size * 0.85);
-  const subBaseline = Math.round(top + title.size + gap + sub.size * 0.85);
+  const subTop = top + title.size + gap;
   return (
     text(98, titleBaseline, title.lines[0] ?? '', { size: title.size, fill, weight: 700 }) +
-    text(98, subBaseline, sub.lines[0] ?? '', { size: sub.size, fill, opacity: 0.75 })
+    sub.lines
+      .map((line, i) => text(98, Math.round(subTop + i * subLineHeight + sub.size * 0.85), line, { size: sub.size, fill, opacity: 0.8 }))
+      .join('')
   );
 }
