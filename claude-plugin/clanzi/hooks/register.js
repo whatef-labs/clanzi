@@ -96,10 +96,27 @@ function markWaiting(id, tool) {
   else looseWaits += 1
 }
 
+/**
+ * Claude Code가 이미 가진 마지막 사용량을 읽어 둔다(mod를 다시 불러온 직후 등).
+ * 언제 측정한 값인지 알 수 없으므로 가장 오래된 시각(1)으로 표시해, 다른 세션의 최신 측정을 덮지 않고 빈자리만 채운다.
+ */
+async function loadKnownUsage($) {
+  try {
+    const usage = await $.session.usage()
+    if (rateLimitsAt === 0 && usage.rateLimits.length > 0) {
+      rateLimits = usage.rateLimits.map((r) => ({ kind: r.kind, percentUsed: r.percentUsed, resetsAt: r.resetsAt }))
+      rateLimitsAt = 1
+    }
+  } catch {
+    // 없으면 다음 측정을 기다린다
+  }
+}
+
 export function register(on) {
   on('session.start', async ($, e, next) => {
     cwd = e.cwd
     reset()
+    await loadKnownUsage($)
     post($, 'start')
     if (!beat) beat = $.clock.every(BEAT_MS, () => post($, 'beat'))
     return next(e)
