@@ -32,7 +32,7 @@ export class FocusHelper {
     process.on('exit', () => this.child?.kill());
   }
 
-  /** 결과 한 줄(focused, opened, not-found, blocked, error:…, timeout)을 돌려준다. */
+  /** 결과 한 줄(focused:switch, focused:attach, opened, not-found, blocked, error:…, timeout)을 돌려준다. */
   request(req: FocusRequest): Promise<string> {
     const child = this.ensure();
     return new Promise((resolve) => {

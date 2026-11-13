@@ -1,7 +1,7 @@
 ﻿# clanzi 창 전환 도우미. 플러그인이 한 번 띄워 두고 표준 입력으로 한 줄짜리 JSON 요청을 보낸다.
 #   {"op":"vscode","folder":"clanzi","session":"<id>"}  VS Code 창을 폴더 이름으로 찾아 앞으로 가져온 뒤 그 대화를 연다
 #   {"op":"pid","pid":1234,"folder":"clanzi"}           프로세스의 부모를 따라 올라가 창을 가진 앱을 앞으로 가져온다
-# 응답은 한 줄: focused | opened | not-found | blocked | error:<메시지>
+# 응답은 한 줄: focused:switch | focused:attach | opened | not-found | blocked | error:<메시지>
 # Windows는 백그라운드 프로세스의 창 전환을 막으므로, 현재 앞 창의 입력 스레드에 잠시 붙어서 전환 권한을 얻는다.
 $ErrorActionPreference = 'Stop'
 
@@ -25,6 +25,7 @@ public static class ClanziWindow {
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr hWnd, bool altTab);
     [DllImport("user32.dll")] static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
 
     const string VsCodeSuffix = " - Visual Studio Code";
@@ -75,8 +76,22 @@ public static class ClanziWindow {
         return first;
     }
 
-    public static bool Focus(IntPtr hWnd) {
+    /** 결과: switch(Alt+Tab 방식으로 전환), attach(입력 스레드에 붙어 전환), blocked */
+    public static string Focus(IntPtr hWnd) {
         if (IsIconic(hWnd)) ShowWindow(hWnd, 9); // SW_RESTORE
+        // Alt+Tab과 같은 전환을 먼저 쓴다. 입력 상태를 붙이지 않아 커서 상태가 섞이지 않는다.
+        SwitchToThisWindow(hWnd, true);
+        string how = "switch";
+        if (!WaitForeground(hWnd)) {
+            AttachAndFocus(hWnd);
+            how = "attach";
+        }
+        RefreshCursor();
+        return GetForegroundWindow() == hWnd ? how : "blocked";
+    }
+
+    // 앞 창의 입력 스레드에 잠시 붙어 전환 권한을 얻는다(SwitchToThisWindow가 막혔을 때만).
+    static void AttachAndFocus(IntPtr hWnd) {
         uint ignored;
         uint fg = GetWindowThreadProcessId(GetForegroundWindow(), out ignored);
         uint me = GetCurrentThreadId();
@@ -87,18 +102,31 @@ public static class ClanziWindow {
         } finally {
             if (attached) AttachThreadInput(me, fg, false);
         }
-        // 입력 상태를 잠시 공유한 탓에 이 도우미의 '작업 중' 커서가 남을 수 있다.
-        // 제자리 마우스 이동을 한 번 보내 커서 아래 창이 커서 모양을 다시 정하게 한다.
-        mouse_event(0x0001, 0, 0, 0, UIntPtr.Zero); // MOUSEEVENTF_MOVE
-        return GetForegroundWindow() == hWnd;
+        WaitForeground(hWnd);
+    }
+
+    static bool WaitForeground(IntPtr hWnd) {
+        for (int i = 0; i < 10; i++) {
+            if (GetForegroundWindow() == hWnd) return true;
+            System.Threading.Thread.Sleep(20);
+        }
+        return false;
+    }
+
+    // 프로그램으로 창을 바꾸면 커서 아래 창이 커서 모양을 다시 정하지 않아 '작업 중' 커서가 남을 수 있다.
+    // Windows Terminal처럼 실제 마우스 입력에만 반응하는 창도 있어, 실제 입력으로 1만큼 움직였다가 되돌린다.
+    static void RefreshCursor() {
+        mouse_event(0x0001, 1, 0, 0, UIntPtr.Zero);  // MOUSEEVENTF_MOVE
+        mouse_event(0x0001, -1, 0, 0, UIntPtr.Zero);
     }
 }
 '@
 
 function Focus-Result([IntPtr]$hwnd) {
     if ($hwnd -eq [IntPtr]::Zero) { return 'not-found' }
-    if ([ClanziWindow]::Focus($hwnd)) { return 'focused' }
-    return 'blocked'
+    $how = [ClanziWindow]::Focus($hwnd)
+    if ($how -eq 'blocked') { return 'blocked' }
+    return "focused:$how"
 }
 
 # 부모 프로세스를 따라 올라가며 창을 가진 첫 프로세스를 찾는다.
