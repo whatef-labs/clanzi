@@ -103,6 +103,24 @@ test('세션 타일: 점·테두리·배경색으로 상태를 구분하고 문�
   for (const svg of [idle, on, off, waitingDim]) assert.match(svg, /<rect x="6"[^>]*fill="none"/);
 });
 
+test('세션 타일: 오류는 빨간 테두리와 빨간 점', () => {
+  const svg = renderSessionTile({ status: 'error', label: 'clanzi' });
+  assert.match(svg, new RegExp(`stroke="${COLOR.error}"`));
+  assert.match(svg, new RegExp(`<circle[^>]*fill="${COLOR.error}"`));
+});
+
+test('세션 타일: 제목이 있으면 폴더 이름 아래 작은 줄로, 넘치면 말줄임', () => {
+  const svg = renderSessionTile({ status: 'idle', label: 'clanzi', subtitle: 'Ulanzi D200X 대시보드 플러그인 구현과 실기기 검증' });
+  const texts = [...svg.matchAll(/<text[^>]*font-size="(\d+)"[^>]*>([^<]*)<\/text>/g)].map((m) => ({ size: Number(m[1]), text: m[2] ?? '' }));
+  assert.equal(texts.length, 2);
+  assert.equal(texts[0]?.text, 'clanzi');
+  assert.ok((texts[1]?.size ?? 99) < (texts[0]?.size ?? 0));
+  assert.ok(texts[1]?.text.endsWith('…'));
+  assert.ok(estimateWidth(texts[1]?.text ?? '', texts[1]?.size ?? 0) <= 164);
+  // 빈 제목은 없는 것과 같다
+  assert.equal(renderSessionTile({ status: 'idle', label: 'clanzi', subtitle: '  ' }), renderSessionTile({ status: 'idle', label: 'clanzi' }));
+});
+
 test('세션 타일: 빈 슬롯은 패널·라벨 없이 빈 아이콘만', () => {
   const empty = renderSessionTile({ status: 'empty', label: 'ignored' });
   assert.doesNotMatch(empty, /<text/);

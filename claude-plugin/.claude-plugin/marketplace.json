@@ -1,0 +1,12 @@
+{
+  "name": "clanzi-local",
+  "owner": { "name": "Steven" },
+  "description": "clanzi 개발용 로컬 마켓플레이스",
+  "plugins": [
+    {
+      "name": "clanzi",
+      "source": "./clanzi",
+      "description": "Claude Code 세션 상태와 사용량을 Ulanzi D200X 대시보드(clanzi Studio 플러그인)로 보낸다"
+    }
+  ]
+}

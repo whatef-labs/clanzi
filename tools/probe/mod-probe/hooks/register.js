@@ -54,6 +54,17 @@ export function register(on) {
     return result
   })
 
+  // 권한 확인 창이 실제로 뜨는 순간을 잡을 수 있는지 확인한다. 직접 설치한 mod에서는 guard 때문에 안 올 수 있다.
+  on('classic.Notification', async ($, e, next) => {
+    send($, 'classic.Notification', { notificationType: e.notification_type })
+    return next(e)
+  })
+
+  on('classic.PermissionRequest', async ($, e, next) => {
+    send($, 'classic.PermissionRequest', { tool: e.tool_name })
+    return next(e)
+  })
+
   on('session.measure', async ($, e, next) => {
     send($, 'session.measure', { rateLimits: e.rateLimits, contextPercent: e.context && e.context.percent, changed: e.changed })
     return next(e)

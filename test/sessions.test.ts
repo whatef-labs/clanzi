@@ -1,0 +1,132 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { parseModMessage } from '../src/protocol.ts';
+import type { ModMessage } from '../src/protocol.ts';
+import { EXPIRE_MS, SETTLE_MS, SessionStore } from '../src/sessions.ts';
+import { assignSlots, folderName, sessionLabels, slotFromKey } from '../src/slots.ts';
+import { UsageStore } from '../src/limits.ts';
+import { lastAiTitle, projectDirName } from '../src/title.ts';
+
+function msg(over: Partial<ModMessage> = {}): ModMessage {
+  return { ev: 'beat', sessionId: 's1', cwd: 'X:\\dev\\clanzi', status: 'idle', turn: 0, at: 0, rateLimits: [], ...over };
+}
+
+test('메시지 검증: 필요한 필드만 남기고 형식이 틀리면 버린다', () => {
+  const ok = parseModMessage({
+    v: 1, ev: 'turn-end', sessionId: 'a', cwd: 'C:\\x', status: 'done', turn: 2, at: 5, reason: 'answer',
+    prompt: '보내면 안 되는 내용',
+    rateLimits: [{ kind: 'five_hour', percentUsed: 30, resetsAt: '2026-11-13T05:10:00.000Z' }, { kind: 'bad' }],
+  });
+  assert.deepEqual(ok, {
+    ev: 'turn-end', sessionId: 'a', cwd: 'C:\\x', status: 'done', turn: 2, at: 5,
+    rateLimits: [{ kind: 'five_hour', percentUsed: 30, resetsAt: '2026-11-13T05:10:00.000Z' }],
+  });
+  assert.equal(parseModMessage({ v: 2, ev: 'beat', sessionId: 'a', cwd: 'c', status: 'idle' }), null);
+  assert.equal(parseModMessage({ v: 1, ev: 'hack', sessionId: 'a', cwd: 'c', status: 'idle' }), null);
+  assert.equal(parseModMessage({ v: 1, ev: 'beat', sessionId: '', cwd: 'c', status: 'idle' }), null);
+  assert.equal(parseModMessage({ v: 1, ev: 'beat', sessionId: 'a', cwd: 'c', status: 'sleeping' }), null);
+  assert.equal(parseModMessage(null), null);
+});
+
+test('세션: 막 시작한 빈 세션은 유예 뒤에 보이고, 유예 중에 끝나면 보이지 않는다', () => {
+  const store = new SessionStore();
+  store.apply(msg({ ev: 'start', sessionId: 'phantom' }), 1000);
+  assert.equal(store.visible(1000).length, 0);
+  store.apply(msg({ ev: 'end', sessionId: 'phantom' }), 1400);
+  assert.equal(store.visible(1000 + SETTLE_MS).length, 0);
+
+  store.apply(msg({ ev: 'start', sessionId: 'real' }), 2000);
+  assert.deepEqual(store.visible(2000 + SETTLE_MS).map((s) => s.id), ['real']);
+});
+
+test('세션: 작업 중 상태로 처음 들어오면(플러그인 재시작 후 복구) 바로 보인다', () => {
+  const store = new SessionStore();
+  store.apply(msg({ ev: 'beat', status: 'working', turn: 3 }), 1000);
+  assert.equal(store.visible(1000).length, 1);
+});
+
+test('세션: 신호가 끊기면 정리하고, 끝 메시지는 바로 지운다', () => {
+  const store = new SessionStore();
+  store.apply(msg({ sessionId: 'a' }), 0);
+  store.apply(msg({ sessionId: 'b' }), 0);
+  store.apply(msg({ sessionId: 'b' }), EXPIRE_MS);
+  assert.deepEqual(store.expire(EXPIRE_MS + 1), ['a']);
+  store.apply(msg({ ev: 'end', sessionId: 'b' }), EXPIRE_MS + 2);
+  assert.equal(store.visible(EXPIRE_MS + 3).length, 0);
+});
+
+test('세션: 키를 눌러 확인한 완료·오류는 대기로 보이고, 다음 턴에는 다시 표시된다', () => {
+  const store = new SessionStore();
+  store.apply(msg({ status: 'done', turn: 1 }), 0);
+  const s = store.get('s1');
+  assert.ok(s);
+  assert.equal(SessionStore.displayStatus(s), 'done');
+  assert.equal(store.acknowledge('s1'), true);
+  assert.equal(SessionStore.displayStatus(s), 'idle');
+  // 주기 신호가 같은 턴의 done을 다시 보내도 확인한 표시는 유지
+  store.apply(msg({ status: 'done', turn: 1 }), 10);
+  assert.equal(SessionStore.displayStatus(s), 'idle');
+  store.apply(msg({ status: 'error', turn: 2 }), 20);
+  assert.equal(SessionStore.displayStatus(s), 'error');
+  assert.equal(store.acknowledge('s1'), true);
+  assert.equal(store.acknowledge('s1'), false);
+});
+
+test('슬롯: 기존 배정은 유지하고 새 세션은 가장 작은 빈 슬롯에, 넘치면 배정하지 않는다', () => {
+  const first = assignSlots(new Map(), ['a', 'b'], [3, 1, 2]);
+  assert.deepEqual([...first], [['a', 1], ['b', 2]]);
+  // a가 끝나고 c, d가 들어오면 c는 1번, d는 3번
+  const second = assignSlots(first, ['b', 'c', 'd'], [1, 2, 3]);
+  assert.deepEqual(Object.fromEntries(second), { b: 2, c: 1, d: 3 });
+  const overflow = assignSlots(second, ['b', 'c', 'd', 'e'], [1, 2, 3]);
+  assert.equal(overflow.has('e'), false);
+  // 슬롯 키가 빠지면 그 자리의 세션은 남는 슬롯으로 옮긴다
+  const fewer = assignSlots(second, ['b', 'c', 'd'], [1, 3]);
+  assert.deepEqual(Object.fromEntries(fewer), { c: 1, d: 3 });
+});
+
+test('슬롯 번호: 열_행 → 왼쪽 위부터 1', () => {
+  assert.equal(slotFromKey('0_0'), 1);
+  assert.equal(slotFromKey('4_0'), 5);
+  assert.equal(slotFromKey('0_1'), 6);
+  assert.equal(slotFromKey('2_2'), 13);
+  assert.equal(slotFromKey('bad'), 0);
+});
+
+test('라벨: 폴더 이름, 같은 폴더는 두 번째부터 번호', () => {
+  assert.equal(folderName('x:\\dev\\dev-proj\\clanzi'), 'clanzi');
+  assert.equal(folderName('/home/me/project/'), 'project');
+  const labels = sessionLabels([
+    { id: 'a', cwd: 'X:\\dev\\clanzi' },
+    { id: 'b', cwd: 'X:\\dev\\api' },
+    { id: 'c', cwd: 'x:\\dev\\Clanzi' },
+  ]);
+  assert.deepEqual(Object.fromEntries(labels), { a: 'clanzi', b: 'api', c: 'Clanzi 2' });
+});
+
+test('사용량: 더 최근 측정만 반영하고, 리셋 시각이 지난 창은 비운다', () => {
+  const usage = new UsageStore();
+  const reset5 = '2026-11-13T05:00:00.000Z';
+  const reset7 = '2026-11-18T01:00:00.000Z';
+  assert.equal(usage.update(100, [{ kind: 'five_hour', percentUsed: 30.4, resetsAt: reset5 }, { kind: 'seven_day', percentUsed: 9, resetsAt: reset7 }]), true);
+  assert.equal(usage.update(50, [{ kind: 'five_hour', percentUsed: 99 }]), false);
+  assert.equal(usage.update(200, []), false);
+
+  const before = Date.parse(reset5) - 2 * 3600_000;
+  assert.deepEqual(usage.view(before), { fiveHour: 30, sevenDay: 9, fiveHourResetsIn: 7200 });
+  const after = Date.parse(reset5) + 1;
+  assert.deepEqual(usage.view(after), { fiveHour: null, sevenDay: 9, fiveHourResetsIn: null });
+});
+
+test('제목: projects 폴더 이름 규칙과 마지막 ai-title 찾기', () => {
+  assert.equal(projectDirName('x:\\dev\\dev-proj\\clanzi'), 'x--dev-dev-proj-clanzi');
+  const text = [
+    'cut-off-partial-line"}',
+    JSON.stringify({ type: 'ai-title', aiTitle: '첫 제목', sessionId: 's' }),
+    JSON.stringify({ type: 'user', message: 'ai-title 이라는 단어가 든 사용자 내용' }),
+    JSON.stringify({ type: 'ai-title', aiTitle: '  마지막 제목 ', sessionId: 's' }),
+    '',
+  ].join('\n');
+  assert.equal(lastAiTitle(text), '마지막 제목');
+  assert.equal(lastAiTitle('{"type":"user"}\n'), null);
+});

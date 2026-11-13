@@ -34,6 +34,16 @@ export function fitLabel(label: string, maxWidth: number): FittedLabel {
   return { lines: [first.trim(), truncate(rest, (s) => fits(s, MIN_SIZE))], size: MIN_SIZE };
 }
 
+/** 한 줄로만 맞춘다. 가장 작은 크기에서도 넘치면 말줄임한다. */
+export function fitOneLine(text: string, maxWidth: number, sizes: readonly number[]): FittedLabel {
+  const clean = text.trim() || '?';
+  for (const size of sizes) {
+    if (estimateWidth(clean, size) <= maxWidth) return { lines: [clean], size };
+  }
+  const size = sizes[sizes.length - 1] ?? MIN_SIZE;
+  return { lines: [truncate(clean, (s) => estimateWidth(s, size) <= maxWidth)], size };
+}
+
 /** 두 줄 길이가 가장 비슷한 분할을 고른다. separatorOnly면 구분자 바로 뒤에서만 나눈다. */
 function bestSplit(text: string, ok: (a: string, b: string) => boolean, separatorOnly: boolean): string[] | null {
   const chars = [...text];

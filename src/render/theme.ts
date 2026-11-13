@@ -13,6 +13,7 @@ export const COLOR = {
   working: '#3B82F6',
   waiting: '#F97316',
   done: '#16A34A',
+  error: '#EF4444',
 
   ok: '#22C55E',
   warn: '#EAB308',

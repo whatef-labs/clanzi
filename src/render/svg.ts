@@ -24,12 +24,15 @@ export interface TextOptions {
   weight?: number;
   family?: string;
   anchor?: 'start' | 'middle' | 'end';
+  /** 0~1 */
+  opacity?: number;
 }
 
 /** y는 글자 기준선(baseline)이다. */
 export function text(x: number, y: number, content: string, o: TextOptions): string {
   const weight = o.weight ? ` font-weight="${o.weight}"` : '';
-  return `<text x="${x}" y="${y}" font-family="${o.family ?? FONT_TEXT}" font-size="${o.size}"${weight} fill="${o.fill}" text-anchor="${o.anchor ?? 'middle'}">${esc(content)}</text>`;
+  const opacity = o.opacity !== undefined ? ` fill-opacity="${o.opacity}"` : '';
+  return `<text x="${x}" y="${y}" font-family="${o.family ?? FONT_TEXT}" font-size="${o.size}"${weight} fill="${o.fill}"${opacity} text-anchor="${o.anchor ?? 'middle'}">${esc(content)}</text>`;
 }
 
 /** 키 전체를 덮는 검정 바탕과 둥근 패널. */

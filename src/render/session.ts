@@ -1,15 +1,18 @@
 // 세션 슬롯 키 이미지 (196 x 196). 상태는 문구 없이 점·테두리·배경색으로만 나타낸다.
 // 대기: 회색 점, 작업 중: 파란 테두리 + 파란 점 깜빡임, 입력 대기: 주황 배경 깜빡임 + 주황 점,
-// 완료: 초록 배경, 빈 슬롯: 빈 아이콘.
+// 완료: 초록 배경, 오류: 빨간 테두리 + 빨간 점, 빈 슬롯: 빈 아이콘.
+// 글자는 폴더 이름(굵게)과, 있으면 그 아래 짧은 세션 제목.
 import { COLOR } from './theme.ts';
-import { fitLabel } from './label.ts';
+import { fitLabel, fitOneLine } from './label.ts';
 import { KEY_SIZE, panel, svgDoc, text } from './svg.ts';
 
-export type SessionStatus = 'empty' | 'idle' | 'working' | 'waiting' | 'done';
+export type SessionStatus = 'empty' | 'idle' | 'working' | 'waiting' | 'done' | 'error';
 
 export interface SessionTileInput {
   status: SessionStatus;
   label?: string;
+  /** 폴더 이름 아래 작게 붙는 세션 제목. */
+  subtitle?: string;
   /** 깜빡임의 꺼진 단계. 작업 중은 점이, 입력 대기는 배경이 어두워진다. */
   dim?: boolean;
 }
@@ -17,6 +20,8 @@ export interface SessionTileInput {
 const LABEL_MAX_WIDTH = 164;
 /** 라벨 블록의 세로 중심. 오른쪽 위 상태 점을 피해 가운데(98)보다 조금 아래로 둔다. */
 const LABEL_CENTER_Y = 104;
+const TITLE_SIZES = [30, 28, 26, 24, 22, 20];
+const SUBTITLE_SIZES = [18, 17, 16];
 
 interface Palette {
   fill: string;
@@ -27,7 +32,7 @@ interface Palette {
 
 function palette(status: Exclude<SessionStatus, 'empty'>, dim: boolean): Palette {
   switch (status) {
-    // 대기·작업 중·입력 대기(꺼진 단계)는 패널을 채우지 않아 검은 바탕 그대로 보인다.
+    // 대기·작업 중·입력 대기(꺼진 단계)·오류는 패널을 채우지 않아 검은 바탕 그대로 보인다.
     case 'idle':
       return { fill: 'none', stroke: COLOR.idle, label: COLOR.text, dot: COLOR.idle };
     case 'working':
@@ -40,10 +45,12 @@ function palette(status: Exclude<SessionStatus, 'empty'>, dim: boolean): Palette
         : { fill: COLOR.waiting, stroke: COLOR.waiting, label: COLOR.dark, dot: COLOR.waiting };
     case 'done':
       return { fill: COLOR.done, stroke: COLOR.done, label: COLOR.text };
+    case 'error':
+      return { fill: 'none', stroke: COLOR.error, label: COLOR.text, dot: COLOR.error };
   }
 }
 
-export function renderSessionTile({ status, label, dim = false }: SessionTileInput): string {
+export function renderSessionTile({ status, label, subtitle, dim = false }: SessionTileInput): string {
   if (status === 'empty') {
     // 빈 슬롯은 패널 없이 검은 바탕에 점선 원 아이콘만 둔다.
     const emptyIcon = `<circle cx="98" cy="98" r="22" fill="none" stroke="${COLOR.empty}" stroke-width="4" stroke-dasharray="7 7"/>`;
@@ -51,14 +58,33 @@ export function renderSessionTile({ status, label, dim = false }: SessionTileInp
   }
 
   const p = palette(status, dim);
-  const fitted = fitLabel(label ?? '', LABEL_MAX_WIDTH);
+  const dot = p.dot ? `<circle cx="162" cy="36" r="12" fill="${p.dot}"/>` : '';
+  const body = subtitle?.trim() ? labelWithSubtitle(label ?? '', subtitle, p.label) : labelOnly(label ?? '', p.label);
+  return svgDoc(KEY_SIZE, KEY_SIZE, panel(p.fill, p.stroke) + dot + body);
+}
+
+/** 폴더 이름만: 한두 줄로 세로 가운데. */
+function labelOnly(label: string, fill: string): string {
+  const fitted = fitLabel(label, LABEL_MAX_WIDTH);
   const lineHeight = Math.round(fitted.size * 1.2);
   // 글자 크기의 약 0.35배를 더하면 기준선이 블록 중심에 맞는다.
   const firstBaseline = Math.round(LABEL_CENTER_Y - ((fitted.lines.length - 1) * lineHeight) / 2 + fitted.size * 0.35);
-  const labelSvg = fitted.lines
-    .map((line, i) => text(98, firstBaseline + i * lineHeight, line, { size: fitted.size, fill: p.label, weight: 700 }))
+  return fitted.lines
+    .map((line, i) => text(98, firstBaseline + i * lineHeight, line, { size: fitted.size, fill, weight: 700 }))
     .join('');
-  const dot = p.dot ? `<circle cx="162" cy="36" r="12" fill="${p.dot}"/>` : '';
+}
 
-  return svgDoc(KEY_SIZE, KEY_SIZE, panel(p.fill, p.stroke) + dot + labelSvg);
+/** 폴더 이름 한 줄과 그 아래 작은 제목 한 줄. */
+function labelWithSubtitle(label: string, subtitle: string, fill: string): string {
+  const title = fitOneLine(label, LABEL_MAX_WIDTH, TITLE_SIZES);
+  const sub = fitOneLine(subtitle, LABEL_MAX_WIDTH, SUBTITLE_SIZES);
+  const gap = 10;
+  const blockHeight = title.size + gap + sub.size;
+  const top = LABEL_CENTER_Y - blockHeight / 2;
+  const titleBaseline = Math.round(top + title.size * 0.85);
+  const subBaseline = Math.round(top + title.size + gap + sub.size * 0.85);
+  return (
+    text(98, titleBaseline, title.lines[0] ?? '', { size: title.size, fill, weight: 700 }) +
+    text(98, subBaseline, sub.lines[0] ?? '', { size: sub.size, fill, opacity: 0.75 })
+  );
 }

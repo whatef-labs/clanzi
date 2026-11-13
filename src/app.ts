@@ -1,16 +1,23 @@
 // clanzi 메인 서비스. Ulanzi Studio가 내장 Node로 실행한다.
-// 현재는 3단계 확인용 미리보기 모드: 키마다 렌더러 샘플을 그리고, 키를 누르면 다음 샘플로 넘긴다.
+// clanzi mod가 보내는 세션 상태와 사용량을 로컬 브리지로 받아, 세션 슬롯 키와 사용량 키에 그린다.
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import UlanziApi, { Utils } from './vendor/ulanzi-api/index.js';
 import type { ActionMessage } from './vendor/ulanzi-api/index.js';
 import { createLogger } from './log.ts';
+import { DEFAULT_PORT, startBridge } from './bridge.ts';
+import { SessionStore } from './sessions.ts';
+import type { Session } from './sessions.ts';
+import { UsageStore } from './limits.ts';
+import { TitleCache } from './title.ts';
+import { assignSlots, sessionLabels, slotFromKey } from './slots.ts';
 import { toDataUri } from './render/svg.ts';
 import { renderSessionTile } from './render/session.ts';
 import { renderUsageGauge } from './render/usage.ts';
-import { SESSION_PREVIEW, USAGE_PREVIEW } from './preview.ts';
+import { formatRemaining } from './render/format.ts';
 
 const PLUGIN_UUID = 'com.ulanzi.ulanzistudio.clanzi';
-/** 깜빡임 확인 간격. 실제 전송은 이미지가 바뀔 때만 한다. */
+/** 화면 갱신 간격. 실제 전송은 이미지가 바뀔 때만 한다. */
 const FRAME_MS = 100;
 /** 깜빡임 반주기: 작업 중 파란 점은 느리게, 입력 대기 배경은 조금 빠르게. */
 const WORKING_BLINK_MS = 800;
@@ -26,18 +33,33 @@ type ActionKind = 'session' | 'usage' | 'unknown';
 
 interface KeyState {
   kind: ActionKind;
-  key: string;
   slot: number;
   active: boolean;
-  sample: number;
   lastImage: string;
 }
 
 const pluginPath = Utils.getPluginPath();
 const log = createLogger(join(pluginPath, 'logs'));
 const keys = new Map<string, KeyState>();
+const sessions = new SessionStore();
+const usage = new UsageStore();
+const titles = new TitleCache(join(homedir(), '.claude', 'projects'));
+/** 세션 ID → 슬롯 번호 */
+let assignment = new Map<string, number>();
 
 log('start', { node: process.version, pluginPath });
+
+startBridge({
+  port: DEFAULT_PORT,
+  log,
+  onMessage(msg) {
+    const now = Date.now();
+    sessions.apply(msg, now);
+    usage.update(msg.at, msg.rateLimits);
+    if (msg.ev === 'end') titles.forget(msg.sessionId);
+    else if (msg.ev === 'start' || msg.ev === 'turn-end' || msg.ev === 'beat') titles.refresh(msg.sessionId, msg.cwd, now);
+  },
+});
 
 const $UD = new UlanziApi();
 $UD.connect(PLUGIN_UUID);
@@ -52,46 +74,41 @@ $UD.onError((error) => log('error', error));
 
 $UD.onAdd((msg) => {
   const state = upsert(msg);
-  log('add', { context: msg.context, kind: state.kind, key: msg.key, slot: state.slot });
-  draw(msg.context, state);
+  log('add', { context: msg.context, kind: state.kind, slot: state.slot });
+  draw(msg.context, state, Date.now(), true);
 });
 
 $UD.onSetActive((msg) => {
   const state = upsert(msg);
-  const changed = state.active !== msg.active;
   state.active = msg.active;
-  if (changed) log('setactive', { context: msg.context, active: msg.active });
-  if (msg.active) draw(msg.context, state, true);
+  if (msg.active) draw(msg.context, state, Date.now(), true);
 });
 
+// 세션 키를 누르면 완료·오류 표시를 확인 처리한다.
 $UD.onRun((msg) => {
   const state = upsert(msg);
-  state.sample += 1;
-  log('run', { context: msg.context, sample: state.sample });
-  draw(msg.context, state);
+  if (state.kind !== 'session') return;
+  const id = sessionAt(state.slot);
+  if (id && sessions.acknowledge(id)) draw(msg.context, state, Date.now());
 });
 
 $UD.onClear((msg) => {
-  for (const item of msg.param ?? []) {
-    keys.delete(item.context);
-    log('clear', { context: item.context });
-  }
+  for (const item of msg.param ?? []) keys.delete(item.context);
 });
 
-$UD.onDialRotate((msg) => log('dialrotate', { context: msg.context, rotateEvent: msg.rotateEvent }));
-
-// 깜빡이는 키(작업 중 점, 입력 대기 배경)만 다시 그린다. 모든 키가 같은 위상으로 깜빡인다.
 setInterval(() => {
-  for (const [context, state] of keys) {
-    if (isAnimated(state)) draw(context, state);
-  }
+  const now = Date.now();
+  for (const id of sessions.expire(now)) titles.forget(id);
+  const visible = sessions.visible(now);
+  assignment = assignSlots(assignment, visible.map((s) => s.id), sessionSlots());
+  const labels = sessionLabels(visible);
+  for (const [context, state] of keys) draw(context, state, now, false, labels);
 }, FRAME_MS).unref();
 
 function upsert(msg: ActionMessage): KeyState {
   let state = keys.get(msg.context);
   if (!state) {
-    const slot = slotFromKey(msg.key);
-    state = { kind: kindOf(msg.uuid), key: msg.key, slot, active: true, sample: Math.max(0, slot - 1), lastImage: '' };
+    state = { kind: kindOf(msg.uuid), slot: slotFromKey(msg.key), active: true, lastImage: '' };
     keys.set(msg.context, state);
   }
   return state;
@@ -102,46 +119,47 @@ function kindOf(uuid: string): ActionKind {
   return name === 'session' || name === 'usage' ? name : 'unknown';
 }
 
-/** 키 이름 '열_행'을 왼쪽 위부터 1로 시작하는 번호로 바꾼다. D200X는 한 줄에 5키. */
-function slotFromKey(key: string): number {
-  const [col, row] = key.split('_').map(Number);
-  if (col === undefined || row === undefined || Number.isNaN(col) || Number.isNaN(row)) return 0;
-  return row * 5 + col + 1;
+function sessionSlots(): number[] {
+  return [...keys.values()].filter((k) => k.kind === 'session').map((k) => k.slot);
 }
 
-function pick<T>(list: readonly T[], index: number): T {
-  return list[index % list.length] as T;
-}
-
-function isAnimated(state: KeyState): boolean {
-  if (state.kind !== 'session') return false;
-  const status = pick(SESSION_PREVIEW, state.sample).status;
-  return status === 'working' || status === 'waiting';
+function sessionAt(slot: number): string | undefined {
+  for (const [id, s] of assignment) if (s === slot) return id;
+  return undefined;
 }
 
 function blinkDim(now: number, halfPeriod: number): boolean {
   return Math.floor(now / halfPeriod) % 2 === 1;
 }
 
-function render(state: KeyState): string {
-  const now = Date.now();
+function renderSession(session: Session | undefined, label: string, now: number): string {
+  if (!session) return renderSessionTile({ status: 'empty' });
+  const status = SessionStore.displayStatus(session);
+  const half = status === 'working' ? WORKING_BLINK_MS : WAITING_BLINK_MS;
+  return renderSessionTile({ status, label, subtitle: titles.get(session.id), dim: blinkDim(now, half) });
+}
+
+function render(state: KeyState, now: number, labels: ReadonlyMap<string, string>): string {
   switch (state.kind) {
     case 'session': {
-      const sample = pick(SESSION_PREVIEW, state.sample);
-      const half = sample.status === 'working' ? WORKING_BLINK_MS : WAITING_BLINK_MS;
-      return renderSessionTile({ ...sample, dim: blinkDim(now, half) });
+      const id = sessionAt(state.slot);
+      const session = id ? sessions.get(id) : undefined;
+      return renderSession(session, (id && labels.get(id)) || '', now);
     }
-    case 'usage':
-      return renderUsageGauge(pick(USAGE_PREVIEW, state.sample));
+    case 'usage': {
+      const view = usage.view(now);
+      const caption = view.fiveHourResetsIn !== null ? formatRemaining(view.fiveHourResetsIn) : undefined;
+      return renderUsageGauge({ fiveHour: view.fiveHour, sevenDay: view.sevenDay, caption });
+    }
     default:
       return renderSessionTile({ status: 'empty' });
   }
 }
 
-/** 이미지가 바뀐 경우에만 보낸다. force는 키가 다시 활성화돼 화면을 새로 그려야 할 때 쓴다. */
-function draw(context: string, state: KeyState, force = false): void {
+/** 이미지가 바뀐 경우에만 보낸다. force는 키가 새로 놓였거나 다시 활성화돼 새로 그려야 할 때 쓴다. */
+function draw(context: string, state: KeyState, now: number, force = false, labels?: ReadonlyMap<string, string>): void {
   if (!state.active) return;
-  const image = toDataUri(render(state));
+  const image = toDataUri(render(state, now, labels ?? sessionLabels(sessions.visible(now))));
   if (!force && image === state.lastImage) return;
   state.lastImage = image;
   $UD.setBaseDataIcon(context, image, '');
