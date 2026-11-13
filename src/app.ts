@@ -12,6 +12,7 @@ import { UsageStore } from './limits.ts';
 import { TitleCache } from './title.ts';
 import { assignSlots, pageLayout, sessionLabels, slotFromKey } from './slots.ts';
 import { SlotMemory } from './slot-memory.ts';
+import { AckMemory } from './ack-memory.ts';
 import { toDataUri } from './render/svg.ts';
 import { renderSessionTile } from './render/session.ts';
 import { renderUsageGauge } from './render/usage.ts';
@@ -64,6 +65,8 @@ const titles = new TitleCache(join(homedir(), '.claude', 'projects'));
 /** 세션 ID → 슬롯 번호 */
 let assignment = new Map<string, number>();
 const slotMemory = new SlotMemory(join(pluginPath, 'state', 'slots.json'));
+/** 키를 눌러 확인한 완료·오류 표시. 재시작해도 이미 확인한 세션이 다시 표시되지 않게 한다. */
+const acks = new AckMemory(join(pluginPath, 'state', 'acks.json'));
 const focus = new FocusHelper(join(pluginPath, 'plugin', 'focus-helper.exe'), log);
 /** 키 context → 누르고 있는 상태 */
 const presses = new Map<string, Hold>();
@@ -97,6 +100,7 @@ startBridge({
         turn: s.turn,
         origin: s.origin ?? null,
         pid: s.pid ?? null,
+        ackTurn: s.ackTurn ?? null,
         slot: assignment.get(s.id) ?? null,
         shownAt: [...shown].find(([, id]) => id === s.id)?.[0] ?? null,
         visible: s.visibleFrom <= now,
@@ -114,6 +118,13 @@ startBridge({
       log('msg', { ev: msg.ev, id: msg.sessionId.slice(0, 8), status: msg.status, turn: msg.turn });
     }
     sessions.apply(msg, now);
+    // 새로 시작했거나 끝난 세션의 확인 기록은 지운다(같은 ID로 이어 하면 턴 번호가 다시 1부터다).
+    // 플러그인이 재시작된 뒤 주기 신호로 돌아온 세션은 기록을 되살린다.
+    if (msg.ev === 'start' || msg.ev === 'end') acks.forget(msg.sessionId);
+    else {
+      const ackTurn = acks.get(msg.sessionId);
+      if (ackTurn !== undefined) sessions.restoreAck(msg.sessionId, ackTurn);
+    }
     // 측정 시각이 없는 예전 mod는 주기 신호에 옛 측정값을 싣고 오므로, 사용량이 바뀐 메시지만 받는다.
     if (msg.measuredAt !== undefined) usage.update(msg.measuredAt, msg.rateLimits);
     else if (msg.ev === 'usage') usage.update(msg.at, msg.rateLimits);
@@ -244,7 +255,10 @@ function focusSession(id: string, context: string): void {
   const session = sessions.get(id);
   if (!session) return;
   const state = keys.get(context);
-  if (sessions.acknowledge(id) && state) draw(context, state, Date.now());
+  if (sessions.acknowledge(id)) {
+    acks.remember(id, session.turn, Date.now());
+    if (state) draw(context, state, Date.now());
+  }
   const req = focusRequestFor(session);
   if (!req) {
     log('focus skipped', { id: id.slice(0, 8), origin: session.origin ?? null });
@@ -267,6 +281,7 @@ function killSession(id: string): void {
     if (result === 'killed') {
       sessions.remove(id, Date.now());
       titles.forget(id);
+      acks.forget(id);
     }
     killing.delete(id);
   });

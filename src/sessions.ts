@@ -78,6 +78,12 @@ export class SessionStore {
     return true;
   }
 
+  /** 파일에 남겨 둔 확인 기록을 되살린다(플러그인 재시작 뒤). 이미 확인한 기록이 있으면 그대로 둔다. */
+  restoreAck(id: string, turn: number): void {
+    const s = this.sessions.get(id);
+    if (s && s.ackTurn === undefined) s.ackTurn = turn;
+  }
+
   /** 신호가 끊긴 세션을 지운다. 지운 세션 ID를 돌려준다. */
   expire(now: number): string[] {
     const removed: string[] = [];

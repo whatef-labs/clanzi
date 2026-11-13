@@ -7,6 +7,7 @@ import { assignSlots, folderName, pageLayout, sessionLabels, slotFromKey } from 
 import { UsageStore } from '../src/limits.ts';
 import { lastAiTitle, projectDirName } from '../src/title.ts';
 import { HOLD_MS, SlotMemory } from '../src/slot-memory.ts';
+import { ACK_KEEP_MS, AckMemory } from '../src/ack-memory.ts';
 import { focusRequestFor } from '../src/focus.ts';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -180,6 +181,37 @@ test('슬롯 기록: 저장한 배정을 다음 시작 때 붙잡고, 시간이 
   assert.equal(restarted.holds(1000 + HOLD_MS).size, 0);
   assert.equal(new SlotMemory(join(dir, 'none.json'), 0).holds(0).size, 0);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('확인 기록: 재시작해도 남고, 지운 것과 오래된 것은 사라진다', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'clanzi-acks-'));
+  const file = join(dir, 'acks.json');
+  const first = new AckMemory(file, 0);
+  first.remember('a', 3, 0);
+  first.remember('b', 1, ACK_KEEP_MS);
+  first.remember('c', 2, ACK_KEEP_MS);
+  first.forget('c');
+
+  const restarted = new AckMemory(file, ACK_KEEP_MS + 1);
+  assert.equal(restarted.get('a'), undefined); // 7일 넘게 지난 기록
+  assert.equal(restarted.get('b'), 1);
+  assert.equal(restarted.get('c'), undefined);
+  assert.equal(new AckMemory(join(dir, 'none.json'), 0).get('b'), undefined);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('세션: 되살린 확인 기록은 그 턴의 완료만 대기로 보이게 하고, 새로 확인한 기록을 덮지 않는다', () => {
+  const store = new SessionStore();
+  store.apply(msg({ status: 'done', turn: 4 }), 0);
+  store.restoreAck('s1', 4);
+  const s = store.get('s1');
+  assert.ok(s);
+  assert.equal(SessionStore.displayStatus(s), 'idle');
+  store.restoreAck('s1', 2);
+  assert.equal(s.ackTurn, 4);
+  store.apply(msg({ status: 'done', turn: 5 }), 10);
+  assert.equal(SessionStore.displayStatus(s), 'done');
+  store.restoreAck('none', 1); // 없는 세션은 무시
 });
 
 test('메시지 검증: 실행 위치와 프로세스 ID(문자열도 받음)', () => {
