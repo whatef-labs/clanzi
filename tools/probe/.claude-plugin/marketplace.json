@@ -1,0 +1,11 @@
+{
+  "name": "clanzi-dev",
+  "owner": { "name": "Steven" },
+  "plugins": [
+    {
+      "name": "clanzi-probe",
+      "source": "./mod-probe",
+      "description": "임시 프로브: 세션 이벤트와 사용량이 언제 어떻게 오는지 로컬 로거로 보낸다"
+    }
+  ]
+}
