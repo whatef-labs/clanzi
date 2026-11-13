@@ -34,18 +34,6 @@
       "UUID": "com.ulanzi.ulanzistudio.clanzi.usage",
       "SupportedInMultiActions": false,
       "Controllers": ["Keypad"]
-    },
-    {
-      "Name": "Waiting",
-      "Icon": "resources/action-waiting.svg",
-      "state": 0,
-      "States": [
-        { "Name": "Empty", "Image": "resources/state-waiting.svg" }
-      ],
-      "Tooltip": "Number of sessions waiting for input",
-      "UUID": "com.ulanzi.ulanzistudio.clanzi.waiting",
-      "SupportedInMultiActions": false,
-      "Controllers": ["Keypad"]
     }
   ],
   "OS": [

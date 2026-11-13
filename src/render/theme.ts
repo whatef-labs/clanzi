@@ -5,11 +5,11 @@ export const COLOR = {
   track: '#2A2C33',
   text: '#F3F4F6',
   muted: '#9CA3AF',
-  faint: '#4B5060',
+  faint: '#3A3D47',
   dark: '#111111',
 
-  idle: '#6B7280',
-  working: '#3B82F6',
+  workingLow: '#0F1A33',
+  workingHigh: '#2563EB',
   waiting: '#F97316',
   waitingDim: '#3A1D0A',
   done: '#16A34A',
@@ -24,4 +24,16 @@ export function gaugeColor(percent: number): string {
   if (percent >= 90) return COLOR.danger;
   if (percent >= 70) return COLOR.warn;
   return COLOR.ok;
+}
+
+/** 두 #RRGGBB 색을 t(0~1) 비율로 섞는다. */
+export function mixColor(from: string, to: string, t: number): string {
+  const k = Math.min(1, Math.max(0, t));
+  const a = parseHex(from);
+  const b = parseHex(to);
+  return '#' + a.map((v, i) => Math.round(v + ((b[i] ?? v) - v) * k).toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+function parseHex(hex: string): number[] {
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 }

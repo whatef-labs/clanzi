@@ -7,13 +7,21 @@ import { createLogger } from './log.ts';
 import { toDataUri } from './render/svg.ts';
 import { renderSessionTile } from './render/session.ts';
 import { renderUsageGauge } from './render/usage.ts';
-import { renderWaitingCount } from './render/waiting.ts';
-import { SESSION_PREVIEW, USAGE_PREVIEW, WAITING_PREVIEW } from './preview.ts';
+import { SESSION_PREVIEW, USAGE_PREVIEW } from './preview.ts';
 
 const PLUGIN_UUID = 'com.ulanzi.ulanzistudio.clanzi';
+/** 애니메이션 프레임 간격. 작업 중 펄스와 입력 대기 깜빡임이 같은 타이머를 쓴다. */
+const FRAME_MS = 100;
+const PULSE_PERIOD_MS = 2000;
 const BLINK_MS = 600;
 
-type ActionKind = 'session' | 'usage' | 'waiting' | 'unknown';
+// SDK는 주고받는 메시지를 이미지 본문까지 콘솔에 남긴다. 애니메이션 프레임마다 쌓이지 않게 끈다.
+if (!process.env.CLANZI_DEBUG) {
+  console.log = () => {};
+  console.warn = () => {};
+}
+
+type ActionKind = 'session' | 'usage' | 'unknown';
 
 interface KeyState {
   kind: ActionKind;
@@ -27,7 +35,6 @@ interface KeyState {
 const pluginPath = Utils.getPluginPath();
 const log = createLogger(join(pluginPath, 'logs'));
 const keys = new Map<string, KeyState>();
-let blinkDim = false;
 
 log('start', { node: process.version, pluginPath });
 
@@ -72,13 +79,12 @@ $UD.onClear((msg) => {
 
 $UD.onDialRotate((msg) => log('dialrotate', { context: msg.context, rotateEvent: msg.rotateEvent }));
 
-// 입력 대기 깜빡임: 깜빡일 키가 있을 때만 다시 그린다.
+// 움직이는 키(작업 중 펄스, 입력 대기 깜빡임)만 프레임마다 다시 그린다. 모든 키가 같은 위상으로 움직인다.
 setInterval(() => {
-  blinkDim = !blinkDim;
   for (const [context, state] of keys) {
-    if (isBlinking(state)) draw(context, state);
+    if (isAnimated(state)) draw(context, state);
   }
-}, BLINK_MS).unref();
+}, FRAME_MS).unref();
 
 function upsert(msg: ActionMessage): KeyState {
   let state = keys.get(msg.context);
@@ -92,7 +98,7 @@ function upsert(msg: ActionMessage): KeyState {
 
 function kindOf(uuid: string): ActionKind {
   const name = uuid.startsWith(PLUGIN_UUID + '.') ? uuid.slice(PLUGIN_UUID.length + 1) : '';
-  return name === 'session' || name === 'usage' || name === 'waiting' ? name : 'unknown';
+  return name === 'session' || name === 'usage' ? name : 'unknown';
 }
 
 /** 키 이름 '열_행'을 왼쪽 위부터 1로 시작하는 번호로 바꾼다. D200X는 한 줄에 5키. */
@@ -106,20 +112,30 @@ function pick<T>(list: readonly T[], index: number): T {
   return list[index % list.length] as T;
 }
 
-function isBlinking(state: KeyState): boolean {
-  return state.kind === 'session' && pick(SESSION_PREVIEW, state.sample).status === 'waiting';
+function isAnimated(state: KeyState): boolean {
+  if (state.kind !== 'session') return false;
+  const status = pick(SESSION_PREVIEW, state.sample).status;
+  return status === 'working' || status === 'waiting';
+}
+
+/** 0→1→0으로 부드럽게 오가는 펄스 세기. */
+function pulseAt(now: number): number {
+  return (1 - Math.cos((2 * Math.PI * (now % PULSE_PERIOD_MS)) / PULSE_PERIOD_MS)) / 2;
 }
 
 function render(state: KeyState): string {
+  const now = Date.now();
   switch (state.kind) {
     case 'session':
-      return renderSessionTile({ ...pick(SESSION_PREVIEW, state.sample), slot: state.slot, dim: blinkDim });
+      return renderSessionTile({
+        ...pick(SESSION_PREVIEW, state.sample),
+        pulse: pulseAt(now),
+        dim: Math.floor(now / BLINK_MS) % 2 === 1,
+      });
     case 'usage':
       return renderUsageGauge(pick(USAGE_PREVIEW, state.sample));
-    case 'waiting':
-      return renderWaitingCount({ count: pick(WAITING_PREVIEW, state.sample) });
     default:
-      return renderSessionTile({ status: 'empty', slot: state.slot });
+      return renderSessionTile({ status: 'empty' });
   }
 }
 

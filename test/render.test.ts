@@ -1,12 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { gaugeColor, COLOR } from '../src/render/theme.ts';
+import { gaugeColor, mixColor, COLOR } from '../src/render/theme.ts';
 import { ring, esc, estimateWidth, toDataUri } from '../src/render/svg.ts';
 import { fitLabel } from '../src/render/label.ts';
 import { formatRemaining, normalizePercent } from '../src/render/format.ts';
 import { renderSessionTile } from '../src/render/session.ts';
 import { renderUsageGauge } from '../src/render/usage.ts';
-import { renderWaitingCount } from '../src/render/waiting.ts';
 
 test('게이지 색 경계: 70 미만 초록, 70~89 노랑, 90 이상 빨강', () => {
   assert.equal(gaugeColor(0), COLOR.ok);
@@ -71,31 +70,45 @@ test('사용률 정규화', () => {
   assert.equal(normalizePercent(Number.NaN), null);
 });
 
-test('세션 타일: 상태는 문구 없이 색으로만 구분한다', () => {
-  const idle = renderSessionTile({ status: 'idle', slot: 3, label: 'clanzi' });
-  const working = renderSessionTile({ status: 'working', slot: 3, label: 'clanzi' });
-  assert.match(idle, new RegExp(`<circle[^>]*fill="${COLOR.idle}"`));
-  assert.match(working, new RegExp(`<circle[^>]*fill="${COLOR.working}"`));
+test('색 섞기: 양 끝과 중간', () => {
+  assert.equal(mixColor('#000000', '#FFFFFF', 0), '#000000');
+  assert.equal(mixColor('#000000', '#FFFFFF', 1), '#FFFFFF');
+  assert.equal(mixColor('#000000', '#FFFFFF', 0.5), '#808080');
+  assert.equal(mixColor('#000000', '#FFFFFF', 7), '#FFFFFF');
+});
 
-  const waiting = renderSessionTile({ status: 'waiting', slot: 3, label: 'clanzi' });
-  const waitingDim = renderSessionTile({ status: 'waiting', slot: 3, label: 'clanzi', dim: true });
+test('세션 타일: 상태는 배경색으로만 구분하고 문구·점·슬롯 번호가 없다', () => {
+  const idle = renderSessionTile({ status: 'idle', label: 'clanzi' });
+  assert.match(idle, new RegExp(`fill="${COLOR.panel}"`));
+
+  const low = renderSessionTile({ status: 'working', label: 'clanzi', pulse: 0 });
+  const high = renderSessionTile({ status: 'working', label: 'clanzi', pulse: 1 });
+  assert.match(low, new RegExp(`fill="${COLOR.workingLow}"`));
+  assert.match(high, new RegExp(`fill="${COLOR.workingHigh}"`));
+
+  const waiting = renderSessionTile({ status: 'waiting', label: 'clanzi' });
+  const waitingDim = renderSessionTile({ status: 'waiting', label: 'clanzi', dim: true });
   assert.notEqual(waiting, waitingDim);
   assert.match(waiting, new RegExp(`fill="${COLOR.waiting}"`));
 
-  const done = renderSessionTile({ status: 'done', slot: 3, label: 'clanzi' });
+  const done = renderSessionTile({ status: 'done', label: 'clanzi' });
   assert.match(done, new RegExp(`fill="${COLOR.done}"`));
 
-  for (const svg of [idle, working, waiting, waitingDim, done]) {
+  for (const svg of [idle, low, high, waiting, waitingDim, done]) {
     assert.doesNotMatch(svg, /대기|작업 중|완료/);
+    assert.doesNotMatch(svg, /<circle/);
+    assert.equal(svg.match(/<text/g)?.length, 1);
   }
+});
 
-  const empty = renderSessionTile({ status: 'empty', slot: 7 });
-  assert.doesNotMatch(empty, /<circle/);
-  assert.match(empty, />7</);
+test('세션 타일: 빈 슬롯은 라벨 없이 빈 아이콘만', () => {
+  const empty = renderSessionTile({ status: 'empty', label: 'ignored' });
+  assert.doesNotMatch(empty, /<text/);
+  assert.equal(countCircles(empty), 1);
 });
 
 test('세션 타일: 라벨의 특수문자를 이스케이프한다', () => {
-  const svg = renderSessionTile({ status: 'idle', slot: 1, label: '<script>&' });
+  const svg = renderSessionTile({ status: 'idle', label: '<script>&' });
   assert.doesNotMatch(svg, /<script>/);
   assert.match(svg, /&#60;script&#62;&#38;/);
 });
@@ -114,12 +127,6 @@ test('사용량 게이지: 링마다 따로 색을 정한다', () => {
   assert.match(svg, new RegExp(`stroke="${COLOR.danger}"`));
   assert.match(svg, new RegExp(`stroke="${COLOR.ok}"`));
   assert.equal(countCircles(svg), 4);
-});
-
-test('입력 대기 키: 0이면 흐리게, 1 이상이면 주황', () => {
-  assert.doesNotMatch(renderWaitingCount({ count: 0 }), new RegExp(COLOR.waiting));
-  assert.match(renderWaitingCount({ count: 2 }), new RegExp(`fill="${COLOR.waiting}"`));
-  assert.match(renderWaitingCount({ count: 250 }), />99\+</);
 });
 
 test('data URI는 SVG MIME 접두어와 base64 본문이다', () => {
