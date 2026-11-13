@@ -128,7 +128,6 @@ claude-plugin/               Claude Code 로컬 마켓플레이스 (clanzi-local
   clanzi/                    clanzi mod
 scripts/                     빌드·개발 스크립트
 test/                        단위 테스트 (node --test)
-tools/probe/                 1단계 확인용 임시 프로브
 com.ulanzi.clanzi.ulanziPlugin/
   manifest.json              UUID com.ulanzi.ulanzistudio.clanzi, 액션: 세션 슬롯, 사용량
   plugin/app.js              빌드 산출물 (커밋하지 않음)

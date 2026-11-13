@@ -1,4 +1,0 @@
-{
-  "description": "clanzi 프로브 hooks module",
-  "modules": ["./register.js"]
-}
