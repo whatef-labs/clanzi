@@ -81,6 +81,10 @@ log('start', { node: process.version, pluginPath });
 startBridge({
   port: DEFAULT_PORT,
   log,
+  onShutdown() {
+    log('shutdown requested by a newer instance');
+    process.exit(0);
+  },
   debug() {
     const now = Date.now();
     return {
@@ -117,13 +121,31 @@ startBridge({
 });
 
 const $UD = new UlanziApi();
-$UD.connect(PLUGIN_UUID);
+// Studio가 넘긴 주소와 포트. SDK의 connect()는 process.argv를 잘라 내므로 다시 연결할 때 쓰도록 미리 받아 둔다.
+const [studioAddress, studioPort] = process.argv.slice(2);
+/** Studio가 막 시작해 아직 연결을 받지 못할 때 다시 시도하는 시간 */
+const CONNECT_RETRY_MS = 2_000;
+const CONNECT_DEADLINE = Date.now() + 60_000;
+let everConnected = false;
+const connectStudio = () => $UD.connect(PLUGIN_UUID, Number(studioPort) || 3906, studioAddress || '127.0.0.1');
+connectStudio();
 
-$UD.onConnected(() => log('connected', { language: $UD.language }));
-// SDK는 다시 연결하지 않는다. Studio가 다음 실행 때 플러그인을 새로 띄우므로 연결이 끊기면 끝낸다.
+$UD.onConnected(() => {
+  everConnected = true;
+  log('connected', { language: $UD.language });
+});
 $UD.onClose(() => {
-  log('closed');
-  process.exit(0);
+  // 한 번 연결된 뒤 끊기면 Studio가 끝난 것이다. 다음 실행 때 Studio가 새로 띄우므로 끝낸다.
+  if (everConnected) {
+    log('closed');
+    process.exit(0);
+  }
+  // 처음 연결이 실패했으면(Studio가 막 시작함) 잠시 뒤 다시 시도한다.
+  if (Date.now() > CONNECT_DEADLINE) {
+    log('studio unreachable');
+    process.exit(1);
+  }
+  setTimeout(connectStudio, CONNECT_RETRY_MS);
 });
 $UD.onError((error) => log('error', error));
 
