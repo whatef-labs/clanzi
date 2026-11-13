@@ -1,4 +1,5 @@
-// 세션 슬롯 키 이미지 (196 x 196).
+// 세션 슬롯 키 이미지 (196 x 196). 상태는 문구 없이 색과 깜빡임으로만 나타낸다.
+// 대기: 회색 점, 작업 중: 파란 점, 입력 대기: 주황 배경(깜빡임), 완료: 초록 배경.
 import { COLOR } from './theme.ts';
 import { fitLabel } from './label.ts';
 import { FONT_NUMBER, KEY_SIZE, panel, svgDoc, text } from './svg.ts';
@@ -14,35 +15,30 @@ export interface SessionTileInput {
   dim?: boolean;
 }
 
-const STATUS_TEXT: Record<Exclude<SessionStatus, 'empty'>, string> = {
-  idle: '대기',
-  working: '작업 중',
-  waiting: '입력 대기',
-  done: '완료',
-};
-
 const LABEL_MAX_WIDTH = 164;
+/** 라벨 블록의 세로 중심. 위쪽에 슬롯 번호와 상태 점이 있어 가운데(98)보다 조금 아래로 둔다. */
+const LABEL_CENTER_Y = 106;
 
 interface Palette {
   fill: string;
   stroke: string;
   label: string;
-  status: string;
+  slot: string;
   dot?: string;
 }
 
 function palette(status: Exclude<SessionStatus, 'empty'>, dim: boolean): Palette {
   switch (status) {
     case 'idle':
-      return { fill: COLOR.panel, stroke: COLOR.border, label: COLOR.text, status: COLOR.muted, dot: COLOR.idle };
+      return { fill: COLOR.panel, stroke: COLOR.border, label: COLOR.text, slot: COLOR.faint, dot: COLOR.idle };
     case 'working':
-      return { fill: COLOR.panel, stroke: COLOR.border, label: COLOR.text, status: COLOR.working, dot: COLOR.working };
+      return { fill: COLOR.panel, stroke: COLOR.border, label: COLOR.text, slot: COLOR.faint, dot: COLOR.working };
     case 'waiting':
       return dim
-        ? { fill: COLOR.waitingDim, stroke: COLOR.waiting, label: COLOR.waiting, status: COLOR.waiting }
-        : { fill: COLOR.waiting, stroke: COLOR.waiting, label: COLOR.dark, status: COLOR.dark };
+        ? { fill: COLOR.waitingDim, stroke: COLOR.waiting, label: COLOR.waiting, slot: COLOR.waiting }
+        : { fill: COLOR.waiting, stroke: COLOR.waiting, label: COLOR.dark, slot: COLOR.dark };
     case 'done':
-      return { fill: COLOR.done, stroke: COLOR.done, label: COLOR.text, status: COLOR.text };
+      return { fill: COLOR.done, stroke: COLOR.done, label: COLOR.text, slot: COLOR.text };
   }
 }
 
@@ -54,18 +50,17 @@ export function renderSessionTile({ status, slot, label, dim = false }: SessionT
   const p = palette(status, dim);
   const fitted = fitLabel(label ?? '', LABEL_MAX_WIDTH);
   const lineHeight = Math.round(fitted.size * 1.2);
-  const firstBaseline = fitted.lines.length === 1 ? 114 : 100;
+  // 글자 높이의 약 0.35배를 더하면 기준선이 블록 중심에 맞는다.
+  const firstBaseline = Math.round(LABEL_CENTER_Y - ((fitted.lines.length - 1) * lineHeight) / 2 + fitted.size * 0.35);
   const labelSvg = fitted.lines
     .map((line, i) => text(98, firstBaseline + i * lineHeight, line, { size: fitted.size, fill: p.label, weight: 700 }))
     .join('');
 
-  const slotColor = status === 'waiting' && !dim ? COLOR.dark : status === 'done' ? COLOR.text : COLOR.faint;
   const parts = [
     panel(p.fill, p.stroke),
-    slotNumber(slot, slotColor),
-    p.dot ? `<circle cx="162" cy="38" r="11" fill="${p.dot}"/>` : '',
+    slotNumber(slot, p.slot),
+    p.dot ? `<circle cx="162" cy="38" r="12" fill="${p.dot}"/>` : '',
     labelSvg,
-    text(98, 168, STATUS_TEXT[status], { size: 20, fill: p.status, weight: 700 }),
   ];
   return svgDoc(KEY_SIZE, KEY_SIZE, parts.join(''));
 }
