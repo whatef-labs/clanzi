@@ -53,6 +53,8 @@ export class UlanziApi extends EventEmitter {
 
   setStateIcon(context: string, state: number, text?: string): void;
   setBaseDataIcon(context: string, data: string, text?: string): void;
+  /** 명령을 그대로 보낸다. 여러 키의 아이콘을 한 번에 바꿀 때 'state'와 statelist로 쓴다. */
+  send(cmd: string, params: Record<string, unknown>): void;
   setPathIcon(context: string, path: string, text?: string): void;
   setGifDataIcon(context: string, gifdata: string, text?: string): void;
   setFeedback(context: string, layout: Record<string, unknown>): void;

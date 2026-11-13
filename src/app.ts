@@ -75,6 +75,8 @@ let pageCount = 1;
 let pageTouchedAt = 0;
 /** 슬롯 번호 → 지금 페이지에서 그 슬롯에 보이는 세션 ID */
 let shown = new Map<number, string>();
+/** 이번 갱신에서 바뀐 키 이미지(context → data URI). 한 메시지로 묶어 보낸다. */
+const pendingIcons = new Map<string, string>();
 
 log('start', { node: process.version, pluginPath });
 
@@ -202,20 +204,24 @@ $UD.onDialRotate((msg) => {
   const step = msg.rotateEvent === 'left' || msg.rotateEvent === 'hold-left' ? -1 : 1;
   page = (page + step + pageCount) % pageCount;
   pageTouchedAt = Date.now();
+  refresh(pageTouchedAt);
 });
 
 $UD.onDialDown((msg) => {
   if (upsert(msg).kind !== 'pages') return;
   page = 0;
   pageTouchedAt = Date.now();
+  refresh(pageTouchedAt);
 });
 
 $UD.onClear((msg) => {
   for (const item of msg.param ?? []) keys.delete(item.context);
 });
 
-setInterval(() => {
-  const now = Date.now();
+setInterval(() => refresh(Date.now()), FRAME_MS).unref();
+
+/** 세션 목록·배정·페이지를 다시 계산하고, 바뀐 키 이미지를 한 메시지로 묶어 보낸다. */
+function refresh(now: number): void {
   for (const id of sessions.expire(now)) {
     titles.forget(id);
     log('expired', { id: id.slice(0, 8) });
@@ -230,7 +236,8 @@ setInterval(() => {
   ({ shown, pageCount, page } = layout);
   const labels = sessionLabels(visible);
   for (const [context, state] of keys) draw(context, state, now, false, labels);
-}, FRAME_MS).unref();
+  flushIcons();
+}
 
 /** 짧게 눌렀을 때: 완료·오류 표시를 확인 처리하고 그 세션의 창으로 이동한다. */
 function focusSession(id: string, context: string): void {
@@ -335,7 +342,26 @@ function draw(context: string, state: KeyState, now: number, force = false, labe
   const image = toDataUri(render(state, now, labels ?? sessionLabels(sessions.visible(now))));
   if (!force && image === state.lastImage) return;
   state.lastImage = image;
-  $UD.setBaseDataIcon(context, image, '');
+  pendingIcons.set(context, image);
+  // 주기 갱신 밖에서 부른 경우(키 추가, 확인 처리 등)는 바로 보낸다.
+  if (!labels) flushIcons();
+}
+
+/**
+ * 모아 둔 키 이미지를 'state' 명령 하나로 보낸다. 페이지를 넘기면 세션 키가 한꺼번에 바뀌는데,
+ * 키마다 따로 보내면 Studio가 차례로 처리해 하나씩 늦게 바뀌어 보이기 때문이다. (setBaseDataIcon과 같은 형식)
+ */
+function flushIcons(): void {
+  if (pendingIcons.size === 0) return;
+  const statelist = [...pendingIcons].map(([context, data]) => ({
+    ...$UD.decodeContext(context),
+    type: 1,
+    data,
+    textData: '',
+    showtext: false,
+  }));
+  pendingIcons.clear();
+  $UD.send('state', { param: { statelist } });
 }
 
 /** 노브 화면: 내장 레이아웃 $UA1의 아이콘 칸에 현재 페이지, 제목 칸에 이름. */
