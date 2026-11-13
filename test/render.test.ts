@@ -87,6 +87,9 @@ test('세션 타일: 점·테두리·배경색으로 상태를 구분하고 문�
   assert.notEqual(waiting, waitingDim);
   assert.match(waiting, new RegExp(`fill="${COLOR.waiting}"`));
   for (const svg of [waiting, waitingDim]) assert.match(svg, new RegExp(`<circle[^>]*fill="${COLOR.waiting}"`));
+  // 이름은 밝은 단계에서 검정, 꺼진 단계에서 다른 상태와 같은 흰색
+  assert.match(waiting, new RegExp(`<text[^>]*fill="${COLOR.dark}"`));
+  assert.match(waitingDim, new RegExp(`<text[^>]*fill="${COLOR.text}"`));
 
   const done = renderSessionTile({ status: 'done', label: 'clanzi' });
   assert.match(done, new RegExp(`fill="${COLOR.done}"`));

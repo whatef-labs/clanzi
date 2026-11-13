@@ -36,7 +36,7 @@ function palette(status: Exclude<SessionStatus, 'empty'>, dim: boolean): Palette
     case 'waiting':
       // 점은 항상 주황. 배경이 밝은 주황일 때는 배경에 묻힌다.
       return dim
-        ? { fill: 'none', stroke: COLOR.waiting, label: COLOR.waiting, dot: COLOR.waiting }
+        ? { fill: 'none', stroke: COLOR.waiting, label: COLOR.text, dot: COLOR.waiting }
         : { fill: COLOR.waiting, stroke: COLOR.waiting, label: COLOR.dark, dot: COLOR.waiting };
     case 'done':
       return { fill: COLOR.done, stroke: COLOR.done, label: COLOR.text };
