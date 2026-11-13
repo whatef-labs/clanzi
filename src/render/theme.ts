@@ -5,6 +5,7 @@ export const COLOR = {
   track: '#2A2C33',
   text: '#F3F4F6',
   muted: '#9CA3AF',
+  // 빈 슬롯 아이콘과 대기 상태(테두리·점)는 같은 회색을 쓴다.
   empty: '#6B7280',
   dark: '#111111',
 

@@ -29,7 +29,7 @@ function palette(status: Exclude<SessionStatus, 'empty'>, dim: boolean): Palette
   switch (status) {
     // 대기·작업 중·입력 대기(꺼진 단계)는 패널을 채우지 않아 검은 바탕 그대로 보인다.
     case 'idle':
-      return { fill: 'none', stroke: COLOR.border, label: COLOR.text, dot: COLOR.idle };
+      return { fill: 'none', stroke: COLOR.idle, label: COLOR.text, dot: COLOR.idle };
     case 'working':
       // 꺼지는 단계에서는 점을 그리지 않아 파란 점만 깜빡인다.
       return { fill: 'none', stroke: COLOR.working, label: COLOR.text, dot: dim ? undefined : COLOR.working };

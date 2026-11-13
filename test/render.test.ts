@@ -73,7 +73,8 @@ test('사용률 정규화', () => {
 test('세션 타일: 점·테두리·배경색으로 상태를 구분하고 문구가 없다', () => {
   const idle = renderSessionTile({ status: 'idle', label: 'clanzi' });
   assert.match(idle, new RegExp(`<circle[^>]*fill="${COLOR.idle}"`));
-  assert.match(idle, new RegExp(`stroke="${COLOR.border}"`));
+  assert.match(idle, new RegExp(`stroke="${COLOR.idle}"`));
+  assert.equal(COLOR.idle, COLOR.empty);
 
   const on = renderSessionTile({ status: 'working', label: 'clanzi' });
   const off = renderSessionTile({ status: 'working', label: 'clanzi', dim: true });
