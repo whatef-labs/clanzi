@@ -25,46 +25,128 @@ Ulanzi D200X를 Claude Code 세션 상태·사용량 대시보드로 만드는 U
 
 ### 실측으로 알게 된 Claude Code 동작
 
-- **SessionStart는 HTTP 훅을 지원하지 않는다.** 디버그 로그에 `HTTP hooks are not supported for SessionStart`가 남는다. 공식 문서에는 없다. SessionEnd는 지원한다.
-- 닫힌 포트로 보낸 HTTP 훅은 8ms 만에 `ECONNREFUSED`로 실패한다. 비차단 오류라 Claude 동작에는 영향이 없고, 대화창에 `hook error` 알림 줄만 남는다.
-- 같은 상황에서 curl과 .NET은 실패까지 약 2초가 걸린다. Windows가 거부된 연결을 재시도하기 때문이다. Node(libuv)는 7ms다.
+- **VS Code 확장 패널은 statusLine을 실행하지 않는다.** CLI(통합 터미널 포함)만 실행한다.
+- **SessionStart는 HTTP 훅을 지원하지 않는다.** 디버그 로그에 `HTTP hooks are not supported for SessionStart`가 남는다. 공식 문서에는 없다.
+- 닫힌 포트로 보낸 HTTP 훅은 8ms 만에 실패하지만, 대화창에 `hook error` 알림 줄이 남는다. curl과 .NET은 같은 실패에 약 2초가 걸린다.
+- **Claude Code mod(v2.1.287 이상)는 CLI, VS Code 패널, Desktop 앱에서 모두 실행된다.** VS Code 확장 2.1.323에서 확인했다.
+  - `session.start`는 대화 탭을 열자마자, `session.measure`는 첫 턴 전부터 사용량(`rateLimits`)을 준다.
+  - `classic.PermissionRequest`는 권한 확인 창이 실제로 뜰 때만 온다. 자동 모드에서 분류기가 승인한 호출에는 오지 않는다. 반면 `tool.check`의 `ask`는 창이 뜨지 않아도 온다.
+  - 질문 도구(AskUserQuestion)는 도구 호출과 권한 요청 두 경로로 대기가 걸린다.
+  - Claude Code 자신의 환경에는 `CLAUDE_PID`가 없다(하위 프로세스에만 전달).
+- VS Code가 대화 탭을 열고 있는 동안 1초 안에 시작과 종료를 마치는 내부 세션을 띄운다.
+- VS Code 확장은 `vscode://anthropic.claude-code/open?session=<id>` URI로 그 대화를 연다. 다만 백그라운드 프로그램이 열면 Windows가 VS Code 창을 앞으로 가져오지 않는다.
+
+## 구조
+
+```
+Claude Code 세션(CLI · VS Code 패널 · Desktop)
+  └ clanzi mod (claude-plugin/clanzi)         세션 상태·사용량을 스스로 추적
+        │ POST http://127.0.0.1:39311/event   상태가 바뀔 때 + 20초 주기 신호
+        ▼
+Ulanzi Studio 플러그인 (com.ulanzi.clanzi.ulanziPlugin, Node 20)
+  ├ 브리지(src/bridge.ts)                     메시지 검증, GET /debug
+  ├ 세션 저장소(src/sessions.ts)               유예·만료·확인 처리
+  ├ 슬롯 배정(src/slots.ts, slot-memory.ts)    키 위치 순서, 재시작 후 자리 유지
+  ├ 사용량(src/limits.ts), 제목(src/title.ts)  가장 최근 측정값, 기록 파일의 ai-title
+  ├ 렌더러(src/render/)                        SVG → setBaseDataIcon
+  └ 창 이동(src/focus.ts + scripts/focus-helper.ps1)
+```
+
+mod가 보내는 것은 세션 ID, 작업 폴더, 상태, 턴 번호, 턴이 끝난 이유, 사용량, 실행 위치, 프로세스 ID뿐이다. 프롬프트·명령·응답 내용은 보내지 않는다. 세션 제목은 플러그인이 기록 파일 끝부분에서 `ai-title` 레코드만 읽어 쓴다.
 
 ## 핸드오프 대비 확정된 변경
 
 | 항목 | 핸드오프 | 확정 | 이유 |
 | --- | --- | --- | --- |
-| 훅 전송 | 명령형 훅 + Node 스크립트 | HTTP 훅 | 이벤트마다 프로세스를 띄우지 않는다. 본문은 루프백으로만 가고 브리지가 필요한 필드만 남긴다 |
-| 세션 등록 | SessionStart | 첫 이벤트(보통 첫 프롬프트) | SessionStart가 HTTP 훅을 지원하지 않는다 |
-| 입력 대기 해제 | (없음) | PostToolUse·PostToolUseFailure 훅 추가 | 권한 승인 뒤 '작업 중'으로 돌아갈 신호가 필요하다 |
-| Studio가 꺼져 있을 때 | — | hook error 알림 줄을 감수 | 지연은 없고 Studio는 평소 켜 둔다 |
-| Claude Code 쪽 Node | 필요 | 필요 없음 | 훅은 HTTP, statusLine은 curl로 구성 예정(5단계) |
-| 사용량 표시 | 2x 키 하나에 이중 링 + 대기 집계 | 작은 키 '사용량'(이중 링) + 작은 키 '입력 대기'(집계) | 2x 키에 플러그인 액션을 놓을 수 없다 |
-| 세션 슬롯 수 | 13개 고정 | 세션 액션을 놓은 키 수만큼. 슬롯 번호는 키 위치로 정한다 | context에 키 위치가 들어 있다 |
-| 세션 상태 표현 | 색 + 상태 문구 | 문구 없이 색과 깜빡임만 | 사용자 결정 |
+| 데이터 수집 | 명령형 훅 + statusLine | Claude Code mod 하나 | 이벤트마다 프로세스를 띄우지 않고, VS Code 패널에서도 사용량을 받는다. Studio가 꺼져 있어도 대화창에 오류 줄이 남지 않는다 |
+| settings.json 변경 | 훅·statusLine 병합 | 플러그인 설치 두 항목(`extraKnownMarketplaces`, `enabledPlugins`) | mod는 플러그인으로 설치한다 |
+| 세션 등록 | SessionStart | 탭을 열자마자(1.5초 유예로 내부 세션 거름) | |
+| 입력 대기 | Notification | 권한 확인 창·질문 도구가 열린 동안. 그 도구 호출이 끝나면 해제 | 승인 뒤 '작업 중'으로 정확히 돌아온다 |
+| 사용량 표시 | 2x 키 하나에 이중 링 + 대기 집계 | 작은 키 '사용량' 하나(이중 링) | 2x 키에 플러그인 액션을 놓을 수 없다. 대기 집계 키는 사용자 결정으로 뺐다 |
+| 세션 슬롯 수 | 13개 고정 | 세션 액션을 놓은 키 수만큼, 번호는 키 위치 | context에 키 위치가 들어 있다 |
+| 라벨 | session_name 또는 폴더 | 폴더 이름 + 짧은 AI 제목(최대 두 줄) | mod에서는 session_name을 얻을 수 없다 |
+| 상태 표현 | 색 + 상태 문구 | 문구 없이 점·테두리·배경색 | 사용자 결정 |
+| 중단·오류 | — | 사용자가 멈춘 턴은 대기, API 오류는 빨간 테두리·점 | 사용자 결정 |
+| 키 누르기 | 완료 표시 해제 | 그 세션의 창으로 이동 + 완료·오류 확인 | 사용자 요청. 핸드오프에서는 범위 밖이었다 |
+
+### 세션 키 표시
+
+| 상태 | 표현 |
+| --- | --- |
+| 빈 슬롯 | 검은 바탕에 점선 원 |
+| 대기 | 회색 테두리·점 |
+| 작업 중 | 파란 테두리, 파란 점 깜빡임(0.8초) |
+| 입력 대기 | 주황 배경 깜빡임(0.6초), 주황 점 |
+| 완료 | 초록 배경 |
+| 오류 | 빨간 테두리·점 |
+
+### 키를 누르면
+
+| 세션 위치 | 동작 |
+| --- | --- |
+| VS Code 패널 | 폴더 이름으로 VS Code 창을 앞으로 가져온 뒤 URI로 그 대화를 연다 |
+| 터미널 CLI(PhpStorm, Windows Terminal 등) | Claude 프로세스의 부모를 따라 올라가 창을 가진 앱을 앞으로 가져온다. 특정 탭까지는 고르지 못한다 |
+
+창 전환은 Alt+Tab과 같은 전환을 먼저 쓰고, Windows가 막으면 앞 창의 입력 스레드에 잠시 붙어서 넘긴다. 전환 직후에는 실제 마우스 입력으로 1만큼 움직였다 되돌려 커서를 새로 정하게 한다. Windows Terminal에서 '작업 중' 커서가 남던 문제 때문이다.
+
+## 설치
+
+```sh
+# Studio 플러그인 (개발용 정션. 해제: npm run dev:unlink)
+npm install && npm run build && npm run dev:link   # 뒤에 Studio 재시작
+
+# Claude Code mod (user 범위. ~/.claude/settings.json에 두 항목이 추가된다)
+claude plugin install clanzi --marketplace <저장소 경로>/claude-plugin
+# 제거: claude plugin marketplace remove clanzi-local
+```
+
+이미 열린 Claude Code 세션은 `/reload-plugins`를 해야 mod가 적용된다.
 
 ## 개발
 
-필요한 것: Node 22.18 이상(타입 스트리핑으로 테스트 실행), npm.
+필요한 것: Node 22.18 이상(타입 스트리핑으로 테스트 실행), npm, Claude Code 2.1.287 이상.
 
 ```sh
-npm install
 npm run build        # com.ulanzi.clanzi.ulanziPlugin/plugin/app.js 생성
 npm run typecheck
-npm run dev:link     # Studio 사용자 플러그인 폴더에 정션 연결 (해제: npm run dev:unlink)
+npm test
+npm run preview      # 렌더러 결과를 preview/index.html로
+npm run dev:reload   # 빌드 후 Studio 재시작 없이 플러그인만 다시 띄움(manifest 변경은 Studio 재시작 필요)
+claude plugin validate ./claude-plugin/clanzi
 ```
 
-빌드 후 Studio를 재시작해야 플러그인이 다시 로드된다. 플러그인 로그는 `com.ulanzi.clanzi.ulanziPlugin/logs/plugin.log`에 남는다.
+- 플러그인 로그: `com.ulanzi.clanzi.ulanziPlugin/logs/plugin.log`
+- 세션·슬롯 상태: `curl http://127.0.0.1:39311/debug`
+- mod를 고친 뒤에는 `plugin.json`의 버전을 올리고 `claude plugin update clanzi@clanzi-local`, 각 세션에서 `/reload-plugins`
 
 ### 폴더 구조
 
 ```
-src/                         TypeScript 소스 (esbuild로 한 파일 번들)
+src/                         Studio 플러그인 TypeScript 소스 (esbuild로 한 파일 번들)
   vendor/ulanzi-api/         공식 Node SDK 복사본 (수정 금지, VENDORED.md 참고)
+claude-plugin/               Claude Code 로컬 마켓플레이스 (clanzi-local)
+  clanzi/                    clanzi mod
 scripts/                     빌드·개발 스크립트
+test/                        단위 테스트 (node --test)
 tools/probe/                 1단계 확인용 임시 프로브
 com.ulanzi.clanzi.ulanziPlugin/
-  manifest.json              UUID com.ulanzi.ulanzistudio.clanzi
+  manifest.json              UUID com.ulanzi.ulanzistudio.clanzi, 액션: 세션 슬롯, 사용량
   plugin/app.js              빌드 산출물 (커밋하지 않음)
+  scripts/focus-helper.ps1   창 전환 도우미 (Windows PowerShell 5.1용, UTF-8 BOM)
+  state/, logs/              실행 중 생기는 파일 (커밋하지 않음)
   resources/                 아이콘
   en.json, ko_KR.json        현지화
 ```
+
+## 진행 상황
+
+| 단계 | 상태 |
+| --- | --- |
+| 1. 환경 확인 | 완료 |
+| 2. 스캐폴드 | 완료 |
+| 3. SVG 렌더러 | 완료 (실기기 확인) |
+| 4. 브리지·세션 상태 | 완료 (훅 대신 mod) |
+| 5. 사용량 | 완료 (statusLine 대신 mod의 session.measure). `/usage` 값과 대조는 남음 |
+| 6. 다중 세션 | 슬롯 배정·라벨 중복·만료·재시작 후 자리 유지 완료. 슬롯보다 세션이 많을 때 노브로 페이지 넘기기는 남음 |
+| 7. 설치·문서 | 남음 |
+| 추가: 키로 세션 창 이동 | 완료 |
