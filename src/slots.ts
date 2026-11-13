@@ -41,6 +41,34 @@ export function assignSlots(
   return next;
 }
 
+export interface PageLayout {
+  /** 슬롯 번호 → 그 슬롯에 보일 세션 ID */
+  shown: Map<number, string>;
+  pageCount: number;
+  /** 범위 안으로 맞춘 현재 페이지(0부터) */
+  page: number;
+}
+
+/**
+ * 페이지별로 슬롯에 보일 세션을 정한다.
+ * 0페이지는 고정 배정을 그대로 쓰고, 그 뒤 페이지는 배정받지 못한(넘친) 세션을 슬롯 번호 순서대로 채운다.
+ * @param sessionIds 화면에 보일 세션, 처음 본 순서대로
+ */
+export function pageLayout(assignment: ReadonlyMap<string, number>, sessionIds: readonly string[], slots: readonly number[], page: number): PageLayout {
+  const sorted = [...new Set(slots)].sort((a, b) => a - b);
+  const overflow = sessionIds.filter((id) => !assignment.has(id));
+  const pageCount = sorted.length === 0 ? 1 : 1 + Math.ceil(overflow.length / sorted.length);
+  const current = Math.min(Math.max(0, page), pageCount - 1);
+  const shown = new Map<number, string>();
+  if (current === 0) {
+    for (const [id, slot] of assignment) if (sorted.includes(slot)) shown.set(slot, id);
+  } else {
+    const chunk = overflow.slice((current - 1) * sorted.length, current * sorted.length);
+    chunk.forEach((id, i) => shown.set(sorted[i] as number, id));
+  }
+  return { shown, pageCount, page: current };
+}
+
 /** 경로의 마지막 폴더 이름. Windows·POSIX 구분자를 모두 받는다. */
 export function folderName(cwd: string): string {
   const parts = cwd.split(/[\\/]+/).filter(Boolean);

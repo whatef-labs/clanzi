@@ -10,12 +10,13 @@ import { SessionStore } from './sessions.ts';
 import type { Session } from './sessions.ts';
 import { UsageStore } from './limits.ts';
 import { TitleCache } from './title.ts';
-import { assignSlots, sessionLabels, slotFromKey } from './slots.ts';
+import { assignSlots, pageLayout, sessionLabels, slotFromKey } from './slots.ts';
 import { SlotMemory } from './slot-memory.ts';
 import { toDataUri } from './render/svg.ts';
 import { renderSessionTile } from './render/session.ts';
 import { renderUsageGauge } from './render/usage.ts';
 import { formatRemaining } from './render/format.ts';
+import { renderPageIcon } from './render/pages.ts';
 import { FocusHelper, focusRequestFor } from './focus.ts';
 
 const PLUGIN_UUID = 'com.ulanzi.ulanzistudio.clanzi';
@@ -26,6 +27,8 @@ const WORKING_BLINK_MS = 800;
 const WAITING_BLINK_MS = 600;
 /** 세션 키를 이만큼 누르고 있으면 그 세션을 강제 종료한다. */
 const KILL_HOLD_MS = 2000;
+/** 노브를 이만큼 만지지 않으면 1페이지로 돌아간다. 다른 페이지를 보던 것을 잊어도 헷갈리지 않게. */
+const PAGE_RETURN_MS = 30_000;
 
 // SDK는 주고받는 메시지를 이미지 본문까지 콘솔에 남긴다. 깜빡임마다 쌓이지 않게 끈다.
 if (!process.env.CLANZI_DEBUG) {
@@ -33,7 +36,7 @@ if (!process.env.CLANZI_DEBUG) {
   console.warn = () => {};
 }
 
-type ActionKind = 'session' | 'usage' | 'unknown';
+type ActionKind = 'session' | 'usage' | 'pages' | 'unknown';
 
 interface KeyState {
   kind: ActionKind;
@@ -64,6 +67,12 @@ const focus = new FocusHelper(join(pluginPath, 'scripts', 'focus-helper.ps1'), l
 const presses = new Map<string, Hold>();
 /** 강제 종료를 요청해 결과를 기다리는 세션. 그동안 키는 다 찬 진행 표시로 둔다. */
 const killing = new Set<string>();
+/** 세션 페이지(0부터). 세션이 세션 키보다 많을 때 노브로 넘긴다. */
+let page = 0;
+let pageCount = 1;
+let pageTouchedAt = 0;
+/** 슬롯 번호 → 지금 페이지에서 그 슬롯에 보이는 세션 ID */
+let shown = new Map<number, string>();
 
 log('start', { node: process.version, pluginPath });
 
@@ -81,11 +90,13 @@ startBridge({
         origin: s.origin ?? null,
         pid: s.pid ?? null,
         slot: assignment.get(s.id) ?? null,
+        shownAt: [...shown].find(([, id]) => id === s.id)?.[0] ?? null,
         visible: s.visibleFrom <= now,
         firstSeenAgoSec: Math.round((now - s.firstSeen) / 1000),
         lastSeenAgoSec: Math.round((now - s.lastSeen) / 1000),
       })),
       sessionSlots: sessionSlots(),
+      page: { page, pageCount },
       usage: usage.snapshot(),
     };
   },
@@ -155,6 +166,20 @@ $UD.onKeyUp((msg) => {
   if (!hold.fired) focusSession(hold.sessionId, msg.context);
 });
 
+// 세션 페이지 노브: 돌리면 페이지를 넘기고, 누르면 1페이지로.
+$UD.onDialRotate((msg) => {
+  if (upsert(msg).kind !== 'pages' || pageCount <= 1) return;
+  const step = msg.rotateEvent === 'left' || msg.rotateEvent === 'hold-left' ? -1 : 1;
+  page = (page + step + pageCount) % pageCount;
+  pageTouchedAt = Date.now();
+});
+
+$UD.onDialDown((msg) => {
+  if (upsert(msg).kind !== 'pages') return;
+  page = 0;
+  pageTouchedAt = Date.now();
+});
+
 $UD.onClear((msg) => {
   for (const item of msg.param ?? []) keys.delete(item.context);
 });
@@ -170,6 +195,9 @@ setInterval(() => {
   const holds = slotMemory.holds(now);
   assignment = assignSlots(assignment, visible.map((s) => s.id), sessionSlots(), holds);
   slotMemory.save(new Map([...holds, ...assignment]), now);
+  if (page > 0 && now - pageTouchedAt > PAGE_RETURN_MS) page = 0;
+  const layout = pageLayout(assignment, visible.map((s) => s.id), sessionSlots(), page);
+  ({ shown, pageCount, page } = layout);
   const labels = sessionLabels(visible);
   for (const [context, state] of keys) draw(context, state, now, false, labels);
 }, FRAME_MS).unref();
@@ -218,7 +246,7 @@ function upsert(msg: ActionMessage): KeyState {
 
 function kindOf(uuid: string): ActionKind {
   const name = uuid.startsWith(PLUGIN_UUID + '.') ? uuid.slice(PLUGIN_UUID.length + 1) : '';
-  return name === 'session' || name === 'usage' ? name : 'unknown';
+  return name === 'session' || name === 'usage' || name === 'pages' ? name : 'unknown';
 }
 
 function sessionSlots(): number[] {
@@ -226,8 +254,7 @@ function sessionSlots(): number[] {
 }
 
 function sessionAt(slot: number): string | undefined {
-  for (const [id, s] of assignment) if (s === slot) return id;
-  return undefined;
+  return shown.get(slot);
 }
 
 /** 그 세션 키를 누르고 있거나 종료 중일 때의 진행률(0~1). 다 찬 뒤에는 종료가 끝날 때까지 1로 둔다. 아니면 undefined. */
@@ -271,8 +298,20 @@ function render(state: KeyState, now: number, labels: ReadonlyMap<string, string
 /** 이미지가 바뀐 경우에만 보낸다. force는 키가 새로 놓였거나 다시 활성화돼 새로 그려야 할 때 쓴다. */
 function draw(context: string, state: KeyState, now: number, force = false, labels?: ReadonlyMap<string, string>): void {
   if (!state.active) return;
+  if (state.kind === 'pages') {
+    drawPages(context, state, force);
+    return;
+  }
   const image = toDataUri(render(state, now, labels ?? sessionLabels(sessions.visible(now))));
   if (!force && image === state.lastImage) return;
   state.lastImage = image;
   $UD.setBaseDataIcon(context, image, '');
+}
+
+/** 노브 화면: 내장 레이아웃 $UA1의 아이콘 칸에 현재 페이지, 제목 칸에 이름. */
+function drawPages(context: string, state: KeyState, force: boolean): void {
+  const icon = toDataUri(renderPageIcon({ page, pageCount }));
+  if (!force && icon === state.lastImage) return;
+  state.lastImage = icon;
+  $UD.setFeedback(context, { icon: { value: icon }, title: { text: '세션 페이지' } });
 }

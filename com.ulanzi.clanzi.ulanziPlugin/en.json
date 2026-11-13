@@ -2,8 +2,18 @@
   "Name": "Clanzi",
   "Description": "Claude Code session status and usage dashboard",
   "Actions": [
-    { "Name": "Session", "Tooltip": "Shows one Claude Code session" },
-    { "Name": "Usage", "Tooltip": "5-hour and weekly usage limits" }
+    {
+      "Name": "Session",
+      "Tooltip": "Shows one Claude Code session"
+    },
+    {
+      "Name": "Usage",
+      "Tooltip": "5-hour and weekly usage limits"
+    },
+    {
+      "Name": "Session pages",
+      "Tooltip": "Rotate to page through sessions when there are more sessions than session keys"
+    }
   ],
   "Localization": {}
 }

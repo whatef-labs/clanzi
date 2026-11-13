@@ -2,8 +2,18 @@
   "Name": "Clanzi",
   "Description": "Claude Code 세션 상태와 사용량 대시보드",
   "Actions": [
-    { "Name": "세션 슬롯", "Tooltip": "Claude Code 세션 하나의 상태를 표시합니다" },
-    { "Name": "사용량", "Tooltip": "5시간·주간 한도 사용률을 이중 원형으로 표시합니다" }
+    {
+      "Name": "세션 슬롯",
+      "Tooltip": "Claude Code 세션 하나의 상태를 표시합니다"
+    },
+    {
+      "Name": "사용량",
+      "Tooltip": "5시간·주간 한도 사용률을 이중 원형으로 표시합니다"
+    },
+    {
+      "Name": "세션 페이지",
+      "Tooltip": "세션이 세션 키보다 많을 때 돌려서 페이지를 넘깁니다. 누르면 첫 페이지로 돌아갑니다"
+    }
   ],
   "Localization": {}
 }

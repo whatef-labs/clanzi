@@ -5,6 +5,7 @@ import { ring, esc, estimateWidth, toDataUri } from '../src/render/svg.ts';
 import { fitLabel, fitWrapped } from '../src/render/label.ts';
 import { formatRemaining, normalizePercent } from '../src/render/format.ts';
 import { renderSessionTile } from '../src/render/session.ts';
+import { renderPageIcon } from '../src/render/pages.ts';
 import { renderUsageGauge } from '../src/render/usage.ts';
 
 test('게이지 색 경계: 70 미만 초록, 70~89 노랑, 90 이상 빨강', () => {
@@ -189,4 +190,11 @@ test('세션 타일: 길게 누르는 동안 빨간 면이 아래에서 진행�
   assert.doesNotMatch(half, /<circle/);
   assert.match(half, new RegExp(`stroke="${COLOR.error}"`));
   assert.match(half, new RegExp(`<text[^>]*fill="${COLOR.text}"[^>]*>clanzi</text>`));
+});
+
+test('노브 페이지 표시: 현재/전체와 점, 한 페이지뿐이면 흐리게', () => {
+  const svg = renderPageIcon({ page: 1, pageCount: 3 });
+  assert.match(svg, />2\/3</);
+  assert.equal(svg.match(/<circle/g)?.length, 3);
+  assert.match(renderPageIcon({ page: 0, pageCount: 1 }), new RegExp(`fill="${COLOR.empty}"[^>]*>1/1<`));
 });

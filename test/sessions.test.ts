@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { parseModMessage } from '../src/protocol.ts';
 import type { ModMessage } from '../src/protocol.ts';
 import { EXPIRE_MS, SETTLE_MS, SessionStore } from '../src/sessions.ts';
-import { assignSlots, folderName, sessionLabels, slotFromKey } from '../src/slots.ts';
+import { assignSlots, folderName, pageLayout, sessionLabels, slotFromKey } from '../src/slots.ts';
 import { UsageStore } from '../src/limits.ts';
 import { lastAiTitle, projectDirName } from '../src/title.ts';
 import { HOLD_MS, SlotMemory } from '../src/slot-memory.ts';
@@ -189,4 +189,22 @@ test('사용량: 쉬는 세션이 주기 신호로 다시 보낸 옛 측정값�
   usage.update(2000, [{ kind: 'five_hour', percentUsed: 39 }]); // 일하는 세션의 최신 측정
   assert.equal(usage.update(1000, [{ kind: 'five_hour', percentUsed: 38 }]), false); // 쉬는 세션의 옛 측정
   assert.equal(usage.view(0).fiveHour, 39);
+});
+
+test('페이지: 1페이지는 고정 배정, 넘친 세션은 다음 페이지부터 슬롯 순서대로', () => {
+  const assignment = new Map([['a', 2], ['b', 1]]);
+  const ids = ['a', 'b', 'c', 'd', 'e'];
+  const first = pageLayout(assignment, ids, [2, 1], 0);
+  assert.equal(first.pageCount, 3);
+  assert.deepEqual(Object.fromEntries(first.shown), { 2: 'a', 1: 'b' });
+  const second = pageLayout(assignment, ids, [2, 1], 1);
+  assert.deepEqual(Object.fromEntries(second.shown), { 1: 'c', 2: 'd' });
+  const third = pageLayout(assignment, ids, [2, 1], 2);
+  assert.deepEqual(Object.fromEntries(third.shown), { 1: 'e' });
+  // 세션이 줄면 페이지를 범위 안으로 맞춘다
+  const shrunk = pageLayout(assignment, ['a', 'b', 'c'], [1, 2], 5);
+  assert.equal(shrunk.page, 1);
+  assert.equal(shrunk.pageCount, 2);
+  // 슬롯 키가 없으면 한 페이지
+  assert.deepEqual(pageLayout(new Map(), ['a'], [], 3), { shown: new Map(), pageCount: 1, page: 0 });
 });

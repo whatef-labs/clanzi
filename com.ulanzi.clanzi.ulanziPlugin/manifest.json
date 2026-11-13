@@ -34,6 +34,25 @@
       "UUID": "com.ulanzi.ulanzistudio.clanzi.usage",
       "SupportedInMultiActions": false,
       "Controllers": ["Keypad"]
+    },
+    {
+      "Name": "Session pages",
+      "Icon": "resources/action-pages.svg",
+      "state": 0,
+      "States": [
+        { "Name": "Pages", "Image": "resources/action-pages.svg" }
+      ],
+      "Tooltip": "Rotate to page through sessions when there are more sessions than session keys",
+      "UUID": "com.ulanzi.ulanzistudio.clanzi.pages",
+      "SupportedInMultiActions": false,
+      "Controllers": ["Encoder"],
+      "Encoder": {
+        "layout": "$UA1",
+        "TriggerDescription": {
+          "Rotate": "Next / previous session page",
+          "Push": "Back to the first page"
+        }
+      }
     }
   ],
   "OS": [
