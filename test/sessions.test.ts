@@ -6,6 +6,10 @@ import { EXPIRE_MS, SETTLE_MS, SessionStore } from '../src/sessions.ts';
 import { assignSlots, folderName, sessionLabels, slotFromKey } from '../src/slots.ts';
 import { UsageStore } from '../src/limits.ts';
 import { lastAiTitle, projectDirName } from '../src/title.ts';
+import { HOLD_MS, SlotMemory } from '../src/slot-memory.ts';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 function msg(over: Partial<ModMessage> = {}): ModMessage {
   return { ev: 'beat', sessionId: 's1', cwd: 'X:\\dev\\clanzi', status: 'idle', turn: 0, at: 0, rateLimits: [], ...over };
@@ -129,4 +133,28 @@ test('제목: projects 폴더 이름 규칙과 마지막 ai-title 찾기', () =>
   ].join('\n');
   assert.equal(lastAiTitle(text), '마지막 제목');
   assert.equal(lastAiTitle('{"type":"user"}\n'), null);
+});
+
+test('슬롯: 재시작 직후 붙잡아 둔 자리는 돌아온 세션에게 주고, 새 세션은 피해 간다', () => {
+  const held = new Map([['old-a', 1], ['old-b', 2]]);
+  // b가 먼저 돌아오고 새 세션 n이 들어와도 a의 1번 자리는 비워 둔다
+  const first = assignSlots(new Map(), ['old-b', 'n'], [1, 2, 3], held);
+  assert.deepEqual(Object.fromEntries(first), { 'old-b': 2, n: 3 });
+  const second = assignSlots(first, ['old-b', 'n', 'old-a'], [1, 2, 3], held);
+  assert.deepEqual(Object.fromEntries(second), { 'old-b': 2, n: 3, 'old-a': 1 });
+  // 붙잡는 시간이 지나면(held 비움) 남은 자리는 새 세션이 쓴다
+  const later = assignSlots(new Map([['old-b', 2]]), ['old-b', 'm'], [1, 2, 3]);
+  assert.deepEqual(Object.fromEntries(later), { 'old-b': 2, m: 1 });
+});
+
+test('슬롯 기록: 저장한 배정을 다음 시작 때 붙잡고, 시간이 지나면 놓는다', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'clanzi-'));
+  const file = join(dir, 'state', 'slots.json');
+  const first = new SlotMemory(file, 0);
+  first.save(new Map([['a', 3], ['b', 1]]), 0);
+  const restarted = new SlotMemory(file, 1000);
+  assert.deepEqual(Object.fromEntries(restarted.holds(1000)), { a: 3, b: 1 });
+  assert.equal(restarted.holds(1000 + HOLD_MS).size, 0);
+  assert.equal(new SlotMemory(join(dir, 'none.json'), 0).holds(0).size, 0);
+  rmSync(dir, { recursive: true, force: true });
 });

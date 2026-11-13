@@ -13,13 +13,19 @@ const RETRY_MS = 10_000;
 export interface BridgeOptions {
   port: number;
   onMessage: (msg: ModMessage) => void;
+  /** GET /debug 응답. 세션 목록과 배정 상태를 확인할 때 쓴다. */
+  debug?: () => unknown;
   log: Logger;
 }
 
-export function startBridge({ port, onMessage, log }: BridgeOptions): Server {
+export function startBridge({ port, onMessage, debug, log }: BridgeOptions): Server {
   const server = createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
       res.writeHead(200, { 'content-type': 'text/plain' }).end('clanzi');
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/debug' && debug) {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(debug(), null, 2));
       return;
     }
     if (req.method !== 'POST' || req.url !== '/event') {

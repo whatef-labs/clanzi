@@ -11,13 +11,21 @@ export function slotFromKey(key: string): number {
  * 세션을 슬롯에 배정한다. 이미 배정된 세션은 자리를 지키고, 새 세션은 번호가 가장 작은 빈 슬롯에 들어간다.
  * 슬롯이 모자라면 나머지 세션은 배정하지 않는다.
  * @param sessionIds 화면에 보일 세션, 처음 본 순서대로
+ * @param held 아직 돌아오지 않은 세션의 자리(재시작 직후). 그 세션이 보이면 그 자리로 가고, 다른 세션은 그 자리를 쓰지 않는다.
  */
-export function assignSlots(prev: ReadonlyMap<string, number>, sessionIds: readonly string[], slots: readonly number[]): Map<string, number> {
+export function assignSlots(
+  prev: ReadonlyMap<string, number>,
+  sessionIds: readonly string[],
+  slots: readonly number[],
+  held: ReadonlyMap<string, number> = new Map(),
+): Map<string, number> {
   const slotSet = new Set(slots);
   const next = new Map<string, number>();
   const used = new Set<number>();
+  const present = new Set(sessionIds);
+  for (const [id, slot] of held) if (!present.has(id) && slotSet.has(slot)) used.add(slot);
   for (const id of sessionIds) {
-    const slot = prev.get(id);
+    const slot = prev.get(id) ?? held.get(id);
     if (slot !== undefined && slotSet.has(slot) && !used.has(slot)) {
       next.set(id, slot);
       used.add(slot);

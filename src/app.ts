@@ -11,6 +11,7 @@ import type { Session } from './sessions.ts';
 import { UsageStore } from './limits.ts';
 import { TitleCache } from './title.ts';
 import { assignSlots, sessionLabels, slotFromKey } from './slots.ts';
+import { SlotMemory } from './slot-memory.ts';
 import { toDataUri } from './render/svg.ts';
 import { renderSessionTile } from './render/session.ts';
 import { renderUsageGauge } from './render/usage.ts';
@@ -46,14 +47,34 @@ const usage = new UsageStore();
 const titles = new TitleCache(join(homedir(), '.claude', 'projects'));
 /** 세션 ID → 슬롯 번호 */
 let assignment = new Map<string, number>();
+const slotMemory = new SlotMemory(join(pluginPath, 'state', 'slots.json'));
 
 log('start', { node: process.version, pluginPath });
 
 startBridge({
   port: DEFAULT_PORT,
   log,
+  debug() {
+    const now = Date.now();
+    return {
+      sessions: sessions.all().map((s) => ({
+        id: s.id,
+        cwd: s.cwd,
+        status: s.status,
+        turn: s.turn,
+        slot: assignment.get(s.id) ?? null,
+        visible: s.visibleFrom <= now,
+        firstSeenAgoSec: Math.round((now - s.firstSeen) / 1000),
+        lastSeenAgoSec: Math.round((now - s.lastSeen) / 1000),
+      })),
+      sessionSlots: sessionSlots(),
+    };
+  },
   onMessage(msg) {
     const now = Date.now();
+    if (!sessions.get(msg.sessionId) || msg.ev !== 'beat') {
+      log('msg', { ev: msg.ev, id: msg.sessionId.slice(0, 8), status: msg.status, turn: msg.turn });
+    }
     sessions.apply(msg, now);
     usage.update(msg.at, msg.rateLimits);
     if (msg.ev === 'end') titles.forget(msg.sessionId);
@@ -98,9 +119,15 @@ $UD.onClear((msg) => {
 
 setInterval(() => {
   const now = Date.now();
-  for (const id of sessions.expire(now)) titles.forget(id);
+  for (const id of sessions.expire(now)) {
+    titles.forget(id);
+    log('expired', { id: id.slice(0, 8) });
+  }
   const visible = sessions.visible(now);
-  assignment = assignSlots(assignment, visible.map((s) => s.id), sessionSlots());
+  // 재시작 직후에는 이전 배정을 붙잡아 두어 세션이 신호를 보내는 순서와 상관없이 원래 자리로 돌아오게 한다.
+  const holds = slotMemory.holds(now);
+  assignment = assignSlots(assignment, visible.map((s) => s.id), sessionSlots(), holds);
+  slotMemory.save(new Map([...holds, ...assignment]), now);
   const labels = sessionLabels(visible);
   for (const [context, state] of keys) draw(context, state, now, false, labels);
 }, FRAME_MS).unref();
