@@ -55,7 +55,9 @@ export class FocusHelper {
 
   private ensure(): ChildProcessWithoutNullStreams {
     if (this.child) return this.child;
-    const child = spawn(this.exe, [], { windowsHide: true });
+    // ELECTRON_RUN_AS_NODE가 넘어가면 도우미가 연 vscode:// 주소로 뜬 Code.exe가 Node로 실행돼 주소를 전달하지 못한다.
+    const { ELECTRON_RUN_AS_NODE: _ignored, ...env } = process.env;
+    const child = spawn(this.exe, [], { windowsHide: true, env });
     let ready = false;
     createInterface({ input: child.stdout }).on('line', (line) => {
       if (!ready && line === 'ready') {

@@ -28,7 +28,10 @@ if (found.length > 0) {
   console.log('실행 중인 플러그인이 없어 Studio 포트로 새로 띄웁니다.');
 }
 
-const child = spawn(exe, args, { detached: true, stdio: 'ignore', windowsHide: true });
+// VS Code·Claude Code 안에서 실행하면 ELECTRON_RUN_AS_NODE 같은 변수가 플러그인과 도우미까지 넘어간다.
+// 그러면 도우미가 연 vscode:// 주소가 VS Code에 닿지 않는 등 Studio가 띄울 때와 다르게 동작하므로 뺀다.
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(ELECTRON_|VSCODE_|CLAUDE)/i.test(key)));
+const child = spawn(exe, args, { detached: true, stdio: 'ignore', windowsHide: true, env });
 child.unref();
 console.log(`다시 실행: pid ${child.pid} ${args.join(' ')}`);
 
