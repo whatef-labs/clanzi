@@ -2,6 +2,7 @@
 #   {"op":"vscode","folder":"clanzi","session":"<id>"}  VS Code 창을 폴더 이름으로 찾아 앞으로 가져온 뒤 그 대화를 연다
 #   {"op":"pid","pid":1234,"folder":"clanzi"}           프로세스의 부모를 따라 올라가 창을 가진 앱을 앞으로 가져온다
 #   {"op":"kill","pid":1234}                            claude 프로세스일 때만 하위 프로세스까지 강제 종료한다
+#   {"op":"url","url":"https://..."}                    기본 브라우저로 연다
 # 응답은 한 줄: focused:switch | focused:attach | opened | not-found | blocked | error:<메시지>
 # Windows는 백그라운드 프로세스의 창 전환을 막으므로, 현재 앞 창의 입력 스레드에 잠시 붙어서 전환 권한을 얻는다.
 $ErrorActionPreference = 'Stop'
@@ -159,6 +160,11 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
                 }
             }
             'pid' { $result = Focus-Result (Find-AncestorWindow ([int]$req.pid) ([string]$req.folder)) }
+            'url' {
+                # 기본 브라우저로 연다. https 주소만 받는다.
+                $url = [string]$req.url
+                if ($url -match '^https://[^\s"]+$') { Start-Process $url; $result = 'opened' } else { $result = 'error:bad url' }
+            }
             'kill' {
                 # 세션이 끝난 뒤 같은 PID를 다른 프로그램이 받았을 수 있으니 claude 프로세스일 때만 끈다.
                 $target = Get-Process -Id ([int]$req.pid) -ErrorAction SilentlyContinue

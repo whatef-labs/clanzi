@@ -27,6 +27,8 @@ const WORKING_BLINK_MS = 800;
 const WAITING_BLINK_MS = 600;
 /** 세션 키를 이만큼 누르고 있으면 그 세션을 강제 종료한다. */
 const KILL_HOLD_MS = 2000;
+/** 사용량 키를 누르면 여는 claude.ai 사용량 화면 */
+const USAGE_URL = 'https://claude.ai/new#settings/usage';
 /** 노브를 이만큼 만지지 않으면 1페이지로 돌아간다. 다른 페이지를 보던 것을 잊어도 헷갈리지 않게. */
 const PAGE_RETURN_MS = 30_000;
 
@@ -164,6 +166,12 @@ $UD.onKeyUp((msg) => {
   if (!hold) return;
   clearTimeout(hold.timer);
   if (!hold.fired) focusSession(hold.sessionId, msg.context);
+});
+
+// 사용량 키: 누르면 기본 브라우저로 claude.ai 사용량 화면을 연다.
+$UD.onRun((msg) => {
+  if (upsert(msg).kind !== 'usage') return;
+  focus.request({ op: 'url', url: USAGE_URL }).then((result) => log('open usage', { result }));
 });
 
 // 세션 페이지 노브: 돌리면 페이지를 넘기고, 누르면 1페이지로.

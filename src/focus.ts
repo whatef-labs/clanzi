@@ -9,7 +9,9 @@ export type FocusRequest =
   | { op: 'vscode'; folder: string; session: string }
   | { op: 'pid'; pid: number; folder: string }
   /** 그 PID가 claude 프로세스일 때만 하위 프로세스까지 강제 종료한다. */
-  | { op: 'kill'; pid: number };
+  | { op: 'kill'; pid: number }
+  /** 기본 브라우저로 연다(https만). */
+  | { op: 'url'; url: string };
 
 /** 도우미 첫 시작(형식 컴파일 포함)까지 고려한 응답 제한 시간. */
 const TIMEOUT_MS = 8000;
