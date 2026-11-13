@@ -11,6 +11,8 @@ export interface UsageView {
 
 interface Window {
   percent: number;
+  /** mod가 보낸 값 그대로(소수 한 자리). 진단용 */
+  raw: number;
   resetsAt: number | null;
 }
 
@@ -18,7 +20,7 @@ export class UsageStore {
   private at = 0;
   private windows = new Map<string, Window>();
 
-  /** 더 최근에 측정된 값일 때만 바꾼다. 바뀌었으면 true. */
+  /** 더 최근에(또는 같은 시각에) 측정된 값일 때만 바꾼다. 바뀌었으면 true. */
   update(at: number, limits: readonly RateLimit[]): boolean {
     if (limits.length === 0 || at < this.at) return false;
     this.at = at;
@@ -27,10 +29,19 @@ export class UsageStore {
       const percent = normalizePercent(l.percentUsed);
       if (percent === null) continue;
       const reset = l.resetsAt ? Date.parse(l.resetsAt) : NaN;
-      next.set(l.kind, { percent, resetsAt: Number.isNaN(reset) ? null : reset });
+      next.set(l.kind, { percent, raw: l.percentUsed, resetsAt: Number.isNaN(reset) ? null : reset });
     }
     this.windows = next;
     return true;
+  }
+
+  /** 진단용: 마지막 측정 시각과 창별 값 */
+  snapshot(): { measuredAt: number; windows: Record<string, { percent: number; raw: number; resetsAt: string | null }> } {
+    const windows: Record<string, { percent: number; raw: number; resetsAt: string | null }> = {};
+    for (const [kind, w] of this.windows) {
+      windows[kind] = { percent: w.percent, raw: w.raw, resetsAt: w.resetsAt === null ? null : new Date(w.resetsAt).toISOString() };
+    }
+    return { measuredAt: this.at, windows };
   }
 
   /** 리셋 시각이 지난 창은 값이 없는 것으로 본다. */

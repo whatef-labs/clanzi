@@ -72,6 +72,7 @@ startBridge({
         lastSeenAgoSec: Math.round((now - s.lastSeen) / 1000),
       })),
       sessionSlots: sessionSlots(),
+      usage: usage.snapshot(),
     };
   },
   onMessage(msg) {
@@ -80,7 +81,9 @@ startBridge({
       log('msg', { ev: msg.ev, id: msg.sessionId.slice(0, 8), status: msg.status, turn: msg.turn });
     }
     sessions.apply(msg, now);
-    usage.update(msg.at, msg.rateLimits);
+    // 측정 시각이 없는 예전 mod는 주기 신호에 옛 측정값을 싣고 오므로, 사용량이 바뀐 메시지만 받는다.
+    if (msg.measuredAt !== undefined) usage.update(msg.measuredAt, msg.rateLimits);
+    else if (msg.ev === 'usage') usage.update(msg.at, msg.rateLimits);
     if (msg.ev === 'end') titles.forget(msg.sessionId);
     else if (msg.ev === 'start' || msg.ev === 'turn-end' || msg.ev === 'beat') titles.refresh(msg.sessionId, msg.cwd, now);
   },

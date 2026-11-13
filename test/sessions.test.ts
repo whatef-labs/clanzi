@@ -176,3 +176,17 @@ test('창 이동 요청: VS Code 세션은 폴더와 세션 ID, 터미널 세션
   assert.deepEqual(focusRequestFor({ id: 's', cwd: 'X:\\dev\\fms-api', origin: 'cli', pid: 42 }), { op: 'pid', pid: 42, folder: 'fms-api' });
   assert.equal(focusRequestFor({ id: 's', cwd: 'X:\\dev\\fms-api', origin: 'cli' }), null);
 });
+
+test('메시지 검증: 사용량 측정 시각', () => {
+  const base = { v: 1, ev: 'beat', sessionId: 'a', cwd: 'c', status: 'idle' };
+  assert.equal(parseModMessage({ ...base, rateLimitsAt: 1234 })?.measuredAt, 1234);
+  assert.equal(parseModMessage({ ...base, rateLimitsAt: 0 })?.measuredAt, undefined);
+  assert.equal(parseModMessage(base)?.measuredAt, undefined);
+});
+
+test('사용량: 쉬는 세션이 주기 신호로 다시 보낸 옛 측정값은 최신 값을 덮지 않는다', () => {
+  const usage = new UsageStore();
+  usage.update(2000, [{ kind: 'five_hour', percentUsed: 39 }]); // 일하는 세션의 최신 측정
+  assert.equal(usage.update(1000, [{ kind: 'five_hour', percentUsed: 38 }]), false); // 쉬는 세션의 옛 측정
+  assert.equal(usage.view(0).fiveHour, 39);
+});

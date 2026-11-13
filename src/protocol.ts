@@ -21,6 +21,8 @@ export interface ModMessage {
   /** 보낸 시각(epoch ms). 사용량은 가장 최근 것을 쓴다. */
   at: number;
   rateLimits: RateLimit[];
+  /** rateLimits를 측정한 시각(epoch ms). 주기 신호는 예전 측정값을 다시 싣고 오므로 이 시각으로 비교한다. */
+  measuredAt?: number;
   /** 어디서 실행 중인지(CLAUDE_CODE_ENTRYPOINT). 예: claude-vscode, cli */
   origin?: string;
   /** Claude Code 프로세스 ID. 터미널 세션의 창을 찾을 때 쓴다. */
@@ -47,6 +49,7 @@ export function parseModMessage(input: unknown): ModMessage | null {
     at: typeof at === 'number' && Number.isFinite(at) ? at : 0,
     rateLimits: parseRateLimits(input.rateLimits),
   };
+  if (typeof input.rateLimitsAt === 'number' && Number.isFinite(input.rateLimitsAt) && input.rateLimitsAt > 0) msg.measuredAt = input.rateLimitsAt;
   if (isText(input.origin) && input.origin.length <= 64) msg.origin = input.origin;
   const pid = typeof input.pid === 'string' ? Number(input.pid) : input.pid;
   if (typeof pid === 'number' && Number.isInteger(pid) && pid > 0) msg.pid = pid;

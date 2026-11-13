@@ -15,6 +15,8 @@ let cwd = ''
 let status = 'idle'
 let turn = 0
 let rateLimits = []
+/** rateLimits를 측정한 시각. 여러 세션이 보내는 값 중 가장 최근 측정을 고르는 기준이다. */
+let rateLimitsAt = 0
 /** 어디서 실행 중인지와 프로세스 ID. 대시보드에서 키를 눌러 이 세션의 창으로 이동할 때 쓴다. */
 let origin
 let pid
@@ -42,7 +44,7 @@ async function post($, ev, extra) {
     await $.http.fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ v: 1, ev, sessionId, cwd, status, turn, at: Date.now(), rateLimits, origin, pid, ...extra }),
+      body: JSON.stringify({ v: 1, ev, sessionId, cwd, status, turn, at: Date.now(), rateLimits, rateLimitsAt, origin, pid, ...extra }),
     })
   } catch {
     // 브리지가 없으면 버린다. 다음 주기 신호가 상태를 다시 맞춘다.
@@ -167,6 +169,7 @@ export function register(on) {
 
   on('session.measure', async ($, e, next) => {
     rateLimits = e.rateLimits.map((r) => ({ kind: r.kind, percentUsed: r.percentUsed, resetsAt: r.resetsAt }))
+    rateLimitsAt = Date.now()
     if (e.changed.includes('rateLimits')) post($, 'usage')
     return next(e)
   })
