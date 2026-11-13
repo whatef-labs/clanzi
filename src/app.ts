@@ -353,7 +353,9 @@ function draw(context: string, state: KeyState, now: number, force = false, labe
  */
 function flushIcons(): void {
   if (pendingIcons.size === 0) return;
-  const statelist = [...pendingIcons].map(([context, data]) => ({
+  // Studio는 목록 순서대로 키를 하나씩 기기에 쓴다. 키 번호(왼쪽 위부터) 순서로 보내 화면이 위에서 아래로 쓸 듯 바뀌게 한다.
+  const ordered = [...pendingIcons].sort(([a], [b]) => (keys.get(a)?.slot ?? 0) - (keys.get(b)?.slot ?? 0));
+  const statelist = ordered.map(([context, data]) => ({
     ...$UD.decodeContext(context),
     type: 1,
     data,
