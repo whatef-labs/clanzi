@@ -97,15 +97,16 @@ function Focus-Result([IntPtr]$hwnd) {
     return 'blocked'
 }
 
-# 부모 프로세스를 따라 올라가며 창을 가진 첫 프로세스를 찾는다
+# 부모 프로세스를 따라 올라가며 창을 가진 첫 프로세스를 찾는다.
+# 탐색기(explorer.exe)까지 올라왔다면 터미널 앱을 지나친 것이므로 멈춘다(바탕화면·탐색기 창을 띄우지 않게).
 function Find-AncestorWindow([int]$procId, [string]$folder) {
     $seen = @{}
     while ($procId -gt 0 -and -not $seen.ContainsKey($procId)) {
         $seen[$procId] = $true
+        $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction SilentlyContinue
+        if (-not $proc -or $proc.Name -ieq 'explorer.exe') { break }
         $hwnd = [ClanziWindow]::FindByProcess([uint32]$procId, $folder)
         if ($hwnd -ne [IntPtr]::Zero) { return $hwnd }
-        $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction SilentlyContinue
-        if (-not $proc) { break }
         $procId = [int]$proc.ParentProcessId
     }
     return [IntPtr]::Zero
