@@ -21,6 +21,10 @@ export interface ModMessage {
   /** 보낸 시각(epoch ms). 사용량은 가장 최근 것을 쓴다. */
   at: number;
   rateLimits: RateLimit[];
+  /** 어디서 실행 중인지(CLAUDE_CODE_ENTRYPOINT). 예: claude-vscode, cli */
+  origin?: string;
+  /** Claude Code 프로세스 ID. 터미널 세션의 창을 찾을 때 쓴다. */
+  pid?: number;
 }
 
 const EVENTS = new Set<string>(['start', 'end', 'beat', 'turn-start', 'turn-end', 'wait', 'resume', 'usage']);
@@ -34,7 +38,7 @@ export function parseModMessage(input: unknown): ModMessage | null {
   if (typeof ev !== 'string' || !EVENTS.has(ev)) return null;
   if (!isText(sessionId) || !isText(cwd)) return null;
   if (typeof status !== 'string' || !STATUSES.has(status)) return null;
-  return {
+  const msg: ModMessage = {
     ev: ev as ModEvent,
     sessionId,
     cwd,
@@ -43,6 +47,10 @@ export function parseModMessage(input: unknown): ModMessage | null {
     at: typeof at === 'number' && Number.isFinite(at) ? at : 0,
     rateLimits: parseRateLimits(input.rateLimits),
   };
+  if (isText(input.origin) && input.origin.length <= 64) msg.origin = input.origin;
+  const pid = typeof input.pid === 'string' ? Number(input.pid) : input.pid;
+  if (typeof pid === 'number' && Number.isInteger(pid) && pid > 0) msg.pid = pid;
+  return msg;
 }
 
 function parseRateLimits(input: unknown): RateLimit[] {

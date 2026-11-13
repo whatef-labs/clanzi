@@ -15,6 +15,9 @@ let cwd = ''
 let status = 'idle'
 let turn = 0
 let rateLimits = []
+/** 어디서 실행 중인지와 프로세스 ID. 대시보드에서 키를 눌러 이 세션의 창으로 이동할 때 쓴다. */
+let origin
+let pid
 /** 진행 중인 도구 호출. 사용자의 답을 기다리는 호출에는 waiting이 붙는다. */
 const calls = new Map()
 let nextCall = 0
@@ -26,10 +29,12 @@ async function post($, ev, extra) {
   try {
     const sessionId = await $.session.id()
     if (!cwd) cwd = await $.session.cwd()
+    if (origin === undefined) origin = (await $.env.get('CLAUDE_CODE_ENTRYPOINT')) ?? ''
+    if (pid === undefined) pid = (await $.env.get('CLAUDE_PID')) ?? ''
     await $.http.fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ v: 1, ev, sessionId, cwd, status, turn, at: Date.now(), rateLimits, ...extra }),
+      body: JSON.stringify({ v: 1, ev, sessionId, cwd, status, turn, at: Date.now(), rateLimits, origin, pid, ...extra }),
     })
   } catch {
     // 브리지가 없으면 버린다. 다음 주기 신호가 상태를 다시 맞춘다.

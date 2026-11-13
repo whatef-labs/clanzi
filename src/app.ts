@@ -16,6 +16,7 @@ import { toDataUri } from './render/svg.ts';
 import { renderSessionTile } from './render/session.ts';
 import { renderUsageGauge } from './render/usage.ts';
 import { formatRemaining } from './render/format.ts';
+import { FocusHelper, focusRequestFor } from './focus.ts';
 
 const PLUGIN_UUID = 'com.ulanzi.ulanzistudio.clanzi';
 /** 화면 갱신 간격. 실제 전송은 이미지가 바뀔 때만 한다. */
@@ -48,6 +49,7 @@ const titles = new TitleCache(join(homedir(), '.claude', 'projects'));
 /** 세션 ID → 슬롯 번호 */
 let assignment = new Map<string, number>();
 const slotMemory = new SlotMemory(join(pluginPath, 'state', 'slots.json'));
+const focus = new FocusHelper(join(pluginPath, 'scripts', 'focus-helper.ps1'), log);
 
 log('start', { node: process.version, pluginPath });
 
@@ -62,6 +64,8 @@ startBridge({
         cwd: s.cwd,
         status: s.status,
         turn: s.turn,
+        origin: s.origin ?? null,
+        pid: s.pid ?? null,
         slot: assignment.get(s.id) ?? null,
         visible: s.visibleFrom <= now,
         firstSeenAgoSec: Math.round((now - s.firstSeen) / 1000),
@@ -105,12 +109,20 @@ $UD.onSetActive((msg) => {
   if (msg.active) draw(msg.context, state, Date.now(), true);
 });
 
-// 세션 키를 누르면 완료·오류 표시를 확인 처리한다.
+// 세션 키를 누르면 그 세션의 창으로 이동하고, 완료·오류 표시였다면 확인 처리한다.
 $UD.onRun((msg) => {
   const state = upsert(msg);
   if (state.kind !== 'session') return;
   const id = sessionAt(state.slot);
-  if (id && sessions.acknowledge(id)) draw(msg.context, state, Date.now());
+  const session = id ? sessions.get(id) : undefined;
+  if (!session) return;
+  if (sessions.acknowledge(session.id)) draw(msg.context, state, Date.now());
+  const req = focusRequestFor(session);
+  if (!req) {
+    log('focus skipped', { id: session.id.slice(0, 8), origin: session.origin ?? null });
+    return;
+  }
+  focus.request(req).then((result) => log('focus', { id: session.id.slice(0, 8), op: req.op, result }));
 });
 
 $UD.onClear((msg) => {

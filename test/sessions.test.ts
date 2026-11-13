@@ -7,6 +7,7 @@ import { assignSlots, folderName, sessionLabels, slotFromKey } from '../src/slot
 import { UsageStore } from '../src/limits.ts';
 import { lastAiTitle, projectDirName } from '../src/title.ts';
 import { HOLD_MS, SlotMemory } from '../src/slot-memory.ts';
+import { focusRequestFor } from '../src/focus.ts';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -157,4 +158,21 @@ test('슬롯 기록: 저장한 배정을 다음 시작 때 붙잡고, 시간이 
   assert.equal(restarted.holds(1000 + HOLD_MS).size, 0);
   assert.equal(new SlotMemory(join(dir, 'none.json'), 0).holds(0).size, 0);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('메시지 검증: 실행 위치와 프로세스 ID(문자열도 받음)', () => {
+  const base = { v: 1, ev: 'beat', sessionId: 'a', cwd: 'c', status: 'idle' };
+  assert.deepEqual(
+    [parseModMessage({ ...base, origin: 'claude-vscode', pid: '3048' })].map((m) => [m?.origin, m?.pid]),
+    [['claude-vscode', 3048]],
+  );
+  const bad = parseModMessage({ ...base, origin: '', pid: 'abc' });
+  assert.equal(bad?.origin, undefined);
+  assert.equal(bad?.pid, undefined);
+});
+
+test('창 이동 요청: VS Code 세션은 폴더와 세션 ID, 터미널 세션은 프로세스 ID, 둘 다 없으면 없음', () => {
+  assert.deepEqual(focusRequestFor({ id: 's', cwd: 'x:\\dev\\clanzi', origin: 'claude-vscode', pid: 1 }), { op: 'vscode', folder: 'clanzi', session: 's' });
+  assert.deepEqual(focusRequestFor({ id: 's', cwd: 'X:\\dev\\fms-api', origin: 'cli', pid: 42 }), { op: 'pid', pid: 42, folder: 'fms-api' });
+  assert.equal(focusRequestFor({ id: 's', cwd: 'X:\\dev\\fms-api', origin: 'cli' }), null);
 });

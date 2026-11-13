@@ -19,6 +19,8 @@ export interface Session {
   visibleFrom: number;
   /** 사용자가 키를 눌러 완료·오류 표시를 해제한 턴. */
   ackTurn?: number;
+  origin?: string;
+  pid?: number;
 }
 
 export class SessionStore {
@@ -42,9 +44,13 @@ export class SessionStore {
         firstSeen: now,
         lastSeen: now,
         visibleFrom: now + settle,
+        origin: msg.origin,
+        pid: msg.pid,
       });
       return;
     }
+    if (msg.origin) prev.origin = msg.origin;
+    if (msg.pid) prev.pid = msg.pid;
     prev.cwd = msg.cwd;
     prev.status = msg.status;
     prev.turn = msg.turn;
