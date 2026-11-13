@@ -25,6 +25,7 @@ public static class ClanziWindow {
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("user32.dll")] static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
 
     const string VsCodeSuffix = " - Visual Studio Code";
 
@@ -86,6 +87,9 @@ public static class ClanziWindow {
         } finally {
             if (attached) AttachThreadInput(me, fg, false);
         }
+        // 입력 상태를 잠시 공유한 탓에 이 도우미의 '작업 중' 커서가 남을 수 있다.
+        // 제자리 마우스 이동을 한 번 보내 커서 아래 창이 커서 모양을 다시 정하게 한다.
+        mouse_event(0x0001, 0, 0, 0, UIntPtr.Zero); // MOUSEEVENTF_MOVE
         return GetForegroundWindow() == hWnd;
     }
 }
