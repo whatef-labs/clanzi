@@ -6,6 +6,11 @@ import type { LiveStatus, ModMessage } from './protocol.ts';
 export const EXPIRE_MS = 70_000;
 /** VS Code가 내부적으로 띄웠다 곧바로 닫는 세션을 걸러 내는 유예 시간. */
 export const SETTLE_MS = 1_500;
+/**
+ * 끝난 세션 ID를 기억하는 시간. 종료 직전에 보낸 주기 신호가 끝 메시지보다 늦게 도착하면
+ * 세션이 되살아나 만료될 때까지 남기 때문에, 그동안 온 신호는 버린다.
+ */
+export const ENDED_MS = 5 * 60_000;
 
 export interface Session {
   id: string;
@@ -25,12 +30,19 @@ export interface Session {
 
 export class SessionStore {
   private readonly sessions = new Map<string, Session>();
+  /** 끝난 세션 ID와 끝난 시각 */
+  private readonly ended = new Map<string, number>();
 
   /** 메시지를 반영한다. */
   apply(msg: ModMessage, now: number): void {
     if (msg.ev === 'end') {
-      this.sessions.delete(msg.sessionId);
+      this.remove(msg.sessionId, now);
       return;
+    }
+    if (this.ended.has(msg.sessionId)) {
+      // 끝난 뒤 늦게 온 신호는 버린다. 같은 ID로 다시 시작하면(대화 이어 하기) 받는다.
+      if (msg.ev !== 'start') return;
+      this.ended.delete(msg.sessionId);
     }
     const prev = this.sessions.get(msg.sessionId);
     if (!prev) {
@@ -75,6 +87,9 @@ export class SessionStore {
         removed.push(id);
       }
     }
+    for (const [id, at] of this.ended) {
+      if (now - at > ENDED_MS) this.ended.delete(id);
+    }
     return removed;
   }
 
@@ -83,8 +98,10 @@ export class SessionStore {
     return [...this.sessions.values()].filter((s) => s.visibleFrom <= now).sort((a, b) => a.firstSeen - b.firstSeen);
   }
 
-  remove(id: string): void {
+  /** 끝난 세션을 지운다(끝 메시지, 키를 길게 눌러 종료). 늦게 온 신호로 되살아나지 않게 기억해 둔다. */
+  remove(id: string, now: number): void {
     this.sessions.delete(id);
+    this.ended.set(id, now);
   }
 
   all(): Session[] {

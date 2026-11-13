@@ -265,7 +265,7 @@ function killSession(id: string): void {
     log('kill', { id: id.slice(0, 8), pid: session.pid, result });
     // 끝났으면 슬롯을 비우고, 실패했으면 원래 상태 표시로 돌아간다.
     if (result === 'killed') {
-      sessions.remove(id);
+      sessions.remove(id, Date.now());
       titles.forget(id);
     }
     killing.delete(id);

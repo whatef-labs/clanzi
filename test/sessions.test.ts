@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseModMessage } from '../src/protocol.ts';
 import type { ModMessage } from '../src/protocol.ts';
-import { EXPIRE_MS, SETTLE_MS, SessionStore } from '../src/sessions.ts';
+import { ENDED_MS, EXPIRE_MS, SETTLE_MS, SessionStore } from '../src/sessions.ts';
 import { assignSlots, folderName, pageLayout, sessionLabels, slotFromKey } from '../src/slots.ts';
 import { UsageStore } from '../src/limits.ts';
 import { lastAiTitle, projectDirName } from '../src/title.ts';
@@ -58,6 +58,28 @@ test('세션: 신호가 끊기면 정리하고, 끝 메시지는 바로 지운�
   assert.deepEqual(store.expire(EXPIRE_MS + 1), ['a']);
   store.apply(msg({ ev: 'end', sessionId: 'b' }), EXPIRE_MS + 2);
   assert.equal(store.visible(EXPIRE_MS + 3).length, 0);
+});
+
+test('세션: 끝난 뒤 늦게 온 주기 신호로 되살아나지 않고, 같은 ID로 다시 시작하면 받는다', () => {
+  const store = new SessionStore();
+  store.apply(msg({ ev: 'start', sessionId: 'a', status: 'working' }), 0);
+  store.apply(msg({ ev: 'end', sessionId: 'a' }), 1000);
+  store.apply(msg({ ev: 'beat', sessionId: 'a', status: 'idle' }), 1080);
+  store.apply(msg({ ev: 'turn-end', sessionId: 'a', status: 'done' }), 1100);
+  assert.equal(store.get('a'), undefined);
+
+  store.apply(msg({ ev: 'start', sessionId: 'a', status: 'working' }), 2000);
+  assert.equal(store.get('a')?.status, 'working');
+
+  // 키로 강제 종료한 세션도 같다
+  store.remove('a', 3000);
+  store.apply(msg({ ev: 'beat', sessionId: 'a', status: 'working' }), 3050);
+  assert.equal(store.get('a'), undefined);
+
+  // 오래 지나면 잊는다(플러그인이 기억할 ID가 끝없이 늘지 않게)
+  store.expire(3000 + ENDED_MS + 1);
+  store.apply(msg({ ev: 'beat', sessionId: 'a', status: 'working' }), 3000 + ENDED_MS + 2);
+  assert.equal(store.get('a')?.status, 'working');
 });
 
 test('세션: 키를 눌러 확인한 완료·오류는 대기로 보이고, 다음 턴에는 다시 표시된다', () => {
