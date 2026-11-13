@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { gaugeColor, mixColor, COLOR } from '../src/render/theme.ts';
+import { gaugeColor, COLOR } from '../src/render/theme.ts';
 import { ring, esc, estimateWidth, toDataUri } from '../src/render/svg.ts';
 import { fitLabel } from '../src/render/label.ts';
 import { formatRemaining, normalizePercent } from '../src/render/format.ts';
@@ -70,21 +70,14 @@ test('사용률 정규화', () => {
   assert.equal(normalizePercent(Number.NaN), null);
 });
 
-test('색 섞기: 양 끝과 중간', () => {
-  assert.equal(mixColor('#000000', '#FFFFFF', 0), '#000000');
-  assert.equal(mixColor('#000000', '#FFFFFF', 1), '#FFFFFF');
-  assert.equal(mixColor('#000000', '#FFFFFF', 0.5), '#808080');
-  assert.equal(mixColor('#000000', '#FFFFFF', 7), '#FFFFFF');
-});
-
-test('세션 타일: 상태는 배경색으로만 구분하고 문구·점·슬롯 번호가 없다', () => {
+test('세션 타일: 대기·작업 중은 점, 입력 대기·완료는 배경색으로 구분하고 문구가 없다', () => {
   const idle = renderSessionTile({ status: 'idle', label: 'clanzi' });
-  assert.match(idle, new RegExp(`fill="${COLOR.panel}"`));
+  assert.match(idle, new RegExp(`<circle[^>]*fill="${COLOR.idle}"`));
 
-  const low = renderSessionTile({ status: 'working', label: 'clanzi', pulse: 0 });
-  const high = renderSessionTile({ status: 'working', label: 'clanzi', pulse: 1 });
-  assert.match(low, new RegExp(`fill="${COLOR.workingLow}"`));
-  assert.match(high, new RegExp(`fill="${COLOR.workingHigh}"`));
+  const on = renderSessionTile({ status: 'working', label: 'clanzi' });
+  const off = renderSessionTile({ status: 'working', label: 'clanzi', dim: true });
+  assert.match(on, new RegExp(`<circle[^>]*fill="${COLOR.working}"`));
+  assert.match(off, new RegExp(`<circle[^>]*fill="${COLOR.workingDim}"`));
 
   const waiting = renderSessionTile({ status: 'waiting', label: 'clanzi' });
   const waitingDim = renderSessionTile({ status: 'waiting', label: 'clanzi', dim: true });
@@ -94,11 +87,11 @@ test('세션 타일: 상태는 배경색으로만 구분하고 문구·점·슬�
   const done = renderSessionTile({ status: 'done', label: 'clanzi' });
   assert.match(done, new RegExp(`fill="${COLOR.done}"`));
 
-  for (const svg of [idle, low, high, waiting, waitingDim, done]) {
+  for (const svg of [idle, on, off, waiting, waitingDim, done]) {
     assert.doesNotMatch(svg, /대기|작업 중|완료/);
-    assert.doesNotMatch(svg, /<circle/);
     assert.equal(svg.match(/<text/g)?.length, 1);
   }
+  for (const svg of [waiting, waitingDim, done]) assert.doesNotMatch(svg, /<circle/);
 });
 
 test('세션 타일: 빈 슬롯은 라벨 없이 빈 아이콘만', () => {

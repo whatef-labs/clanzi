@@ -1,6 +1,6 @@
-// 세션 슬롯 키 이미지 (196 x 196). 상태는 문구 없이 배경색과 움직임으로만 나타낸다.
-// 대기: 이름만, 작업 중: 파란 배경 펄스, 입력 대기: 주황 배경 깜빡임, 완료: 초록 배경, 빈 슬롯: 빈 아이콘.
-import { COLOR, mixColor } from './theme.ts';
+// 세션 슬롯 키 이미지 (196 x 196). 상태는 문구 없이 점과 배경색으로만 나타낸다.
+// 대기: 회색 점, 작업 중: 파란 점 깜빡임, 입력 대기: 주황 배경 깜빡임, 완료: 초록 배경, 빈 슬롯: 빈 아이콘.
+import { COLOR } from './theme.ts';
 import { fitLabel } from './label.ts';
 import { KEY_SIZE, panel, svgDoc, text } from './svg.ts';
 
@@ -9,29 +9,27 @@ export type SessionStatus = 'empty' | 'idle' | 'working' | 'waiting' | 'done';
 export interface SessionTileInput {
   status: SessionStatus;
   label?: string;
-  /** 작업 중 펄스 세기(0~1). */
-  pulse?: number;
-  /** 입력 대기 깜빡임의 꺼진 단계. */
+  /** 깜빡임의 꺼진 단계. 작업 중은 점이, 입력 대기는 배경이 어두워진다. */
   dim?: boolean;
 }
 
 const LABEL_MAX_WIDTH = 164;
-const LABEL_CENTER_Y = 98;
+/** 라벨 블록의 세로 중심. 오른쪽 위 상태 점을 피해 가운데(98)보다 조금 아래로 둔다. */
+const LABEL_CENTER_Y = 104;
 
 interface Palette {
   fill: string;
   stroke: string;
   label: string;
+  dot?: string;
 }
 
-function palette(status: Exclude<SessionStatus, 'empty'>, pulse: number, dim: boolean): Palette {
+function palette(status: Exclude<SessionStatus, 'empty'>, dim: boolean): Palette {
   switch (status) {
     case 'idle':
-      return { fill: COLOR.panel, stroke: COLOR.border, label: COLOR.text };
-    case 'working': {
-      const fill = mixColor(COLOR.workingLow, COLOR.workingHigh, pulse);
-      return { fill, stroke: fill, label: COLOR.text };
-    }
+      return { fill: COLOR.panel, stroke: COLOR.border, label: COLOR.text, dot: COLOR.idle };
+    case 'working':
+      return { fill: COLOR.panel, stroke: COLOR.border, label: COLOR.text, dot: dim ? COLOR.workingDim : COLOR.working };
     case 'waiting':
       return dim
         ? { fill: COLOR.waitingDim, stroke: COLOR.waiting, label: COLOR.waiting }
@@ -41,13 +39,13 @@ function palette(status: Exclude<SessionStatus, 'empty'>, pulse: number, dim: bo
   }
 }
 
-export function renderSessionTile({ status, label, pulse = 0, dim = false }: SessionTileInput): string {
+export function renderSessionTile({ status, label, dim = false }: SessionTileInput): string {
   if (status === 'empty') {
     const emptyIcon = `<circle cx="98" cy="98" r="22" fill="none" stroke="${COLOR.faint}" stroke-width="4" stroke-dasharray="7 7"/>`;
     return svgDoc(KEY_SIZE, KEY_SIZE, panel(COLOR.panel, COLOR.border) + emptyIcon);
   }
 
-  const p = palette(status, pulse, dim);
+  const p = palette(status, dim);
   const fitted = fitLabel(label ?? '', LABEL_MAX_WIDTH);
   const lineHeight = Math.round(fitted.size * 1.2);
   // 글자 크기의 약 0.35배를 더하면 기준선이 블록 중심에 맞는다.
@@ -55,6 +53,7 @@ export function renderSessionTile({ status, label, pulse = 0, dim = false }: Ses
   const labelSvg = fitted.lines
     .map((line, i) => text(98, firstBaseline + i * lineHeight, line, { size: fitted.size, fill: p.label, weight: 700 }))
     .join('');
+  const dot = p.dot ? `<circle cx="162" cy="36" r="12" fill="${p.dot}"/>` : '';
 
-  return svgDoc(KEY_SIZE, KEY_SIZE, panel(p.fill, p.stroke) + labelSvg);
+  return svgDoc(KEY_SIZE, KEY_SIZE, panel(p.fill, p.stroke) + dot + labelSvg);
 }

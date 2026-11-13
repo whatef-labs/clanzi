@@ -4,7 +4,7 @@ import type { SessionTileInput } from './render/session.ts';
 import { renderUsageGauge } from './render/usage.ts';
 import type { UsageGaugeInput } from './render/usage.ts';
 
-export type SessionPreview = Omit<SessionTileInput, 'pulse' | 'dim'>;
+export type SessionPreview = Omit<SessionTileInput, 'dim'>;
 
 export const SESSION_PREVIEW: SessionPreview[] = [
   { status: 'empty' },
@@ -29,8 +29,8 @@ export interface PreviewSample {
 }
 
 export const PREVIEW_SAMPLES: PreviewSample[] = [
-  ...SESSION_PREVIEW.map((s) => ({ name: `${s.status} ${s.label ?? ''}`, svg: renderSessionTile({ ...s, pulse: 1 }) })),
-  { name: 'working (pulse 0)', svg: renderSessionTile({ status: 'working', label: 'passtrue-api-server', pulse: 0 }) },
+  ...SESSION_PREVIEW.map((s) => ({ name: `${s.status} ${s.label ?? ''}`, svg: renderSessionTile(s) })),
+  { name: 'working (dim)', svg: renderSessionTile({ status: 'working', label: 'passtrue-api-server', dim: true }) },
   { name: 'waiting (dim)', svg: renderSessionTile({ status: 'waiting', label: 'fms-api', dim: true }) },
   ...USAGE_PREVIEW.map((u) => ({ name: `usage ${u.fiveHour ?? '--'} / ${u.sevenDay ?? '--'}`, svg: renderUsageGauge(u) })),
 ];

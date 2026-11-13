@@ -10,12 +10,13 @@ import { renderUsageGauge } from './render/usage.ts';
 import { SESSION_PREVIEW, USAGE_PREVIEW } from './preview.ts';
 
 const PLUGIN_UUID = 'com.ulanzi.ulanzistudio.clanzi';
-/** 애니메이션 프레임 간격. 작업 중 펄스와 입력 대기 깜빡임이 같은 타이머를 쓴다. */
+/** 깜빡임 확인 간격. 실제 전송은 이미지가 바뀔 때만 한다. */
 const FRAME_MS = 100;
-const PULSE_PERIOD_MS = 2000;
-const BLINK_MS = 600;
+/** 깜빡임 반주기: 작업 중 파란 점은 느리게, 입력 대기 배경은 조금 빠르게. */
+const WORKING_BLINK_MS = 800;
+const WAITING_BLINK_MS = 600;
 
-// SDK는 주고받는 메시지를 이미지 본문까지 콘솔에 남긴다. 애니메이션 프레임마다 쌓이지 않게 끈다.
+// SDK는 주고받는 메시지를 이미지 본문까지 콘솔에 남긴다. 깜빡임마다 쌓이지 않게 끈다.
 if (!process.env.CLANZI_DEBUG) {
   console.log = () => {};
   console.warn = () => {};
@@ -79,7 +80,7 @@ $UD.onClear((msg) => {
 
 $UD.onDialRotate((msg) => log('dialrotate', { context: msg.context, rotateEvent: msg.rotateEvent }));
 
-// 움직이는 키(작업 중 펄스, 입력 대기 깜빡임)만 프레임마다 다시 그린다. 모든 키가 같은 위상으로 움직인다.
+// 깜빡이는 키(작업 중 점, 입력 대기 배경)만 다시 그린다. 모든 키가 같은 위상으로 깜빡인다.
 setInterval(() => {
   for (const [context, state] of keys) {
     if (isAnimated(state)) draw(context, state);
@@ -118,20 +119,18 @@ function isAnimated(state: KeyState): boolean {
   return status === 'working' || status === 'waiting';
 }
 
-/** 0→1→0으로 부드럽게 오가는 펄스 세기. */
-function pulseAt(now: number): number {
-  return (1 - Math.cos((2 * Math.PI * (now % PULSE_PERIOD_MS)) / PULSE_PERIOD_MS)) / 2;
+function blinkDim(now: number, halfPeriod: number): boolean {
+  return Math.floor(now / halfPeriod) % 2 === 1;
 }
 
 function render(state: KeyState): string {
   const now = Date.now();
   switch (state.kind) {
-    case 'session':
-      return renderSessionTile({
-        ...pick(SESSION_PREVIEW, state.sample),
-        pulse: pulseAt(now),
-        dim: Math.floor(now / BLINK_MS) % 2 === 1,
-      });
+    case 'session': {
+      const sample = pick(SESSION_PREVIEW, state.sample);
+      const half = sample.status === 'working' ? WORKING_BLINK_MS : WAITING_BLINK_MS;
+      return renderSessionTile({ ...sample, dim: blinkDim(now, half) });
+    }
     case 'usage':
       return renderUsageGauge(pick(USAGE_PREVIEW, state.sample));
     default:
