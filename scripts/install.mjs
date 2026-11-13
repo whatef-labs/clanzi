@@ -4,7 +4,7 @@
 // uninstall : 설정 백업 → mod와 마켓플레이스 제거(설정 항목 포함) → Studio 플러그인 제거
 // 여러 번 실행해도 이미 된 단계는 건너뛴다. ~/.claude/settings.json을 바꾸기 전에는 계획을 보여 주고 확인을 받는다.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -21,7 +21,10 @@ const PLUGIN_ID = `clanzi@${MARKETPLACE}`;
 const SETTINGS = join(homedir(), '.claude', 'settings.json');
 const MIN_CLAUDE = [2, 1, 287];
 /** Studio 플러그인으로 복사하는 것. 실행 중 생기는 state/, logs/는 건드리지 않는다. */
-const PACKAGE_FILES = ['manifest.json', 'package.json', 'en.json', 'ko_KR.json', 'resources', 'scripts', 'plugin'];
+const PACKAGE_FILES = ['manifest.json', 'package.json', 'en.json', 'ko_KR.json', 'resources', 'plugin'];
+/** 예전 버전이 설치했지만 이제 쓰지 않는 것(PowerShell 창 전환 도우미) */
+const OBSOLETE_FILES = ['scripts'];
+const HELPER = join('plugin', 'focus-helper.exe');
 
 const args = process.argv.slice(2);
 const command = args.find((a) => !a.startsWith('--')) ?? 'install';
@@ -46,7 +49,7 @@ async function install() {
   const studio = studioState();
   const mod = modState();
   const steps = [];
-  steps.push('빌드: plugin/app.js');
+  steps.push('빌드: plugin/app.js, plugin/focus-helper.exe');
   if (studio.kind === 'junction' && studio.toSource) steps.push(`Studio 플러그인: 개발용 정션 유지 (${TARGET})`);
   else if (link) steps.push(`Studio 플러그인: 개발용 정션 연결 ${TARGET} -> ${SOURCE}`);
   else steps.push(`Studio 플러그인: ${studio.kind === 'missing' ? '복사' : '다시 복사'} -> ${TARGET}`);
@@ -83,6 +86,7 @@ async function uninstall() {
   const settingsSteps = [];
   if (mod.marketplace) settingsSteps.push(`마켓플레이스 제거: ${MARKETPLACE} (mod ${PLUGIN_ID}와 settings.json의 해당 항목도 함께 제거)`);
   else if (mod.plugin) settingsSteps.push(`mod 제거: ${PLUGIN_ID}`);
+  if (studio.kind !== 'missing') steps.push('실행 중인 Studio 플러그인 끄기');
   if (studio.kind === 'junction') steps.push(`Studio 플러그인: 개발용 정션 제거 (원본 폴더는 그대로) ${TARGET}`);
   else if (studio.kind === 'folder') steps.push(`Studio 플러그인 폴더 삭제: ${TARGET}`);
   if (steps.length + settingsSteps.length === 0) {
@@ -96,8 +100,9 @@ async function uninstall() {
   if (settingsSteps.length > 0) backupSettings();
   if (mod.marketplace) run('claude', ['plugin', 'marketplace', 'remove', MARKETPLACE], '마켓플레이스 제거');
   else if (mod.plugin) run('claude', ['plugin', 'uninstall', PLUGIN_ID], 'mod 제거');
+  if (studio.kind !== 'missing') await stopPlugin();
   if (studio.kind === 'junction') rmSync(TARGET);
-  else if (studio.kind === 'folder') rmSync(TARGET, { recursive: true, force: true });
+  else if (studio.kind === 'folder') rmSync(TARGET, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
   console.log(`
 완료. Ulanzi Studio를 재시작하면 Clanzi가 목록에서 사라집니다.
 열린 Claude Code 세션은 /reload-plugins 하거나 다시 시작하면 mod가 빠집니다.`);
@@ -129,6 +134,10 @@ function installStudioPlugin(studio) {
     return;
   }
   mkdirSync(TARGET, { recursive: true });
+  removeStaleHelpers();
+  // 실행 중인 도우미 exe는 덮어쓰거나 지울 수 없지만 이름은 바꿀 수 있다. 비켜 두고 다음 설치 때 지운다.
+  moveAsideIfRunning(join(TARGET, HELPER), join(TARGET, `focus-helper.exe.old-${Date.now()}`));
+  for (const name of OBSOLETE_FILES) rmSync(join(TARGET, name), { recursive: true, force: true });
   for (const name of PACKAGE_FILES) {
     const from = join(SOURCE, name);
     if (!existsSync(from)) fail(`${from}이 없습니다. 빌드가 실패했는지 확인하세요.`);
@@ -137,6 +146,40 @@ function installStudioPlugin(studio) {
     else copyFileSync(from, join(TARGET, name));
   }
   console.log(`Studio 플러그인 복사: ${TARGET}`);
+}
+
+/** 지우되, 실행 중이라 지울 수 없으면 이름을 바꿔 비켜 둔다. */
+function moveAsideIfRunning(file, aside) {
+  if (!existsSync(file)) return;
+  try {
+    rmSync(file);
+  } catch {
+    renameSync(file, aside);
+  }
+}
+
+/** 비켜 둔 옛 도우미를 지운다. 아직 실행 중이면 남겨 둔다. */
+function removeStaleHelpers() {
+  for (const name of readdirSync(TARGET)) {
+    if (!name.startsWith('focus-helper.exe.old-')) continue;
+    try {
+      rmSync(join(TARGET, name));
+    } catch {
+      // 실행 중
+    }
+  }
+}
+
+/** 실행 중인 플러그인을 끈다. 플러그인이 끝나면 창 전환 도우미도 따라 끝나 폴더를 지울 수 있다. */
+async function stopPlugin() {
+  try {
+    const res = await fetch('http://127.0.0.1:39311/shutdown', { method: 'POST', signal: AbortSignal.timeout(1000) });
+    if (!res.ok) return;
+    console.log('실행 중인 플러그인을 껐습니다.');
+    await new Promise((r) => setTimeout(r, 1000));
+  } catch {
+    // 실행 중이 아니다
+  }
 }
 
 function studioState() {

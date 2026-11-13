@@ -64,7 +64,7 @@ const titles = new TitleCache(join(homedir(), '.claude', 'projects'));
 /** 세션 ID → 슬롯 번호 */
 let assignment = new Map<string, number>();
 const slotMemory = new SlotMemory(join(pluginPath, 'state', 'slots.json'));
-const focus = new FocusHelper(join(pluginPath, 'scripts', 'focus-helper.ps1'), log);
+const focus = new FocusHelper(join(pluginPath, 'plugin', 'focus-helper.exe'), log);
 /** 키 context → 누르고 있는 상태 */
 const presses = new Map<string, Hold>();
 /** 강제 종료를 요청해 결과를 기다리는 세션. 그동안 키는 다 찬 진행 표시로 둔다. */

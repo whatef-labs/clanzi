@@ -1,4 +1,4 @@
-// 세션 창으로 이동: 창 전환 도우미(scripts/focus-helper.ps1)를 한 번 띄워 두고 요청마다 재사용한다.
+// 세션 창으로 이동: 창 전환 도우미(plugin/focus-helper.exe, 소스는 native/focus-helper.cs)를 한 번 띄워 두고 요청마다 재사용한다.
 import { spawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -13,7 +13,7 @@ export type FocusRequest =
   /** 기본 브라우저로 연다(https만). */
   | { op: 'url'; url: string };
 
-/** 도우미 첫 시작(형식 컴파일 포함)까지 고려한 응답 제한 시간. */
+/** 응답 제한 시간. 강제 종료(taskkill)가 하위 프로세스를 정리하는 시간까지 넉넉히 둔다. */
 const TIMEOUT_MS = 8000;
 
 /** 세션이 어디서 실행 중인지에 따라 요청을 정한다. 이동할 방법이 없으면 null. */
@@ -25,13 +25,13 @@ export function focusRequestFor(s: { id: string; cwd: string; origin?: string; p
 }
 
 export class FocusHelper {
-  private readonly script: string;
+  private readonly exe: string;
   private readonly log: Logger;
   private child: ChildProcessWithoutNullStreams | null = null;
   private pending: Array<(line: string) => void> = [];
 
-  constructor(script: string, log: Logger) {
-    this.script = script;
+  constructor(exe: string, log: Logger) {
+    this.exe = exe;
     this.log = log;
     process.on('exit', () => this.child?.kill());
   }
@@ -55,9 +55,7 @@ export class FocusHelper {
 
   private ensure(): ChildProcessWithoutNullStreams {
     if (this.child) return this.child;
-    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', this.script], {
-      windowsHide: true,
-    });
+    const child = spawn(this.exe, [], { windowsHide: true });
     let ready = false;
     createInterface({ input: child.stdout }).on('line', (line) => {
       if (!ready && line === 'ready') {

@@ -49,8 +49,10 @@ Ulanzi Studio 플러그인 (com.ulanzi.clanzi.ulanziPlugin, Node 20)
   ├ 슬롯 배정(src/slots.ts, slot-memory.ts)    키 위치 순서, 재시작 후 자리 유지
   ├ 사용량(src/limits.ts), 제목(src/title.ts)  가장 최근 측정값, 기록 파일의 ai-title
   ├ 렌더러(src/render/)                        SVG → 바뀐 키만 'state' 명령 하나로
-  └ 창 이동·세션 종료·브라우저 열기(src/focus.ts + scripts/focus-helper.ps1)
+  └ 창 이동·세션 종료·브라우저 열기(src/focus.ts + plugin/focus-helper.exe)
 ```
+
+창 전환 도우미는 Windows에 기본으로 있는 .NET Framework 4 C# 컴파일러로 빌드하는 작은 exe다(소스 `native/focus-helper.cs`). 처음 키를 누를 때 한 번 띄워 두고 계속 쓴다. 처음에는 PowerShell 스크립트였는데, 시작에 약 1초(PowerShell 0.57초 + C# 형식 컴파일 0.43초, 부팅 직후엔 더 걸림)가 걸리고 상주 메모리가 89MB였다. exe는 시작 0.03~0.14초, 상주 메모리 약 15MB다.
 
 Studio는 키 이미지를 목록 순서대로 기기에 한 장씩 보낸다. 기기 전송이 병목이라 한 번에 바뀌지는 않으므로, 키 번호 순서로 보내 위에서 아래로 바뀌게 한다.
 
@@ -109,7 +111,7 @@ mod가 보내는 것은 세션 ID, 작업 폴더, 상태, 턴 번호, 턴이 끝
 
 ## 설치
 
-필요한 것: Windows, Ulanzi Studio, Claude Code 2.1.287 이상, Node 22.18 이상(설치 스크립트와 빌드용).
+필요한 것: Windows, Ulanzi Studio, Claude Code 2.1.287 이상, Node 22.18 이상(설치 스크립트와 빌드용). 도우미 빌드에 쓰는 C# 컴파일러(`%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe`)는 Windows 10·11에 기본으로 있다.
 
 ```sh
 npm install
@@ -122,7 +124,7 @@ npm run clanzi:uninstall   # 설정 백업 → mod·마켓플레이스 제거 �
 - `-- --dry-run`을 붙이면 할 일만 보여 준다. 확인 없이 진행하려면 `-- --yes`.
 - 다시 실행해도 된 단계는 건너뛴다. mod 폴더 버전이 설치된 것과 다르면 갱신한다.
 - settings.json에는 `extraKnownMarketplaces.clanzi-local`과 `enabledPlugins["clanzi@clanzi-local"]` 두 항목만 생긴다. 기존 훅·statusLine은 건드리지 않는다. 제거하면 두 항목도 빠진다.
-- Studio 플러그인은 `%APPDATA%\Ulanzi\UlanziDeck\Plugins\com.ulanzi.clanzi.ulanziPlugin`에 복사한다. 실행 중 생긴 `state/`, `logs/`는 다시 설치해도 남는다. `-- --link`를 붙이면 복사 대신 저장소 폴더로 정션을 건다(개발용). 이미 저장소를 가리키는 정션이 있으면 그대로 둔다.
+- Studio 플러그인은 `%APPDATA%\Ulanzi\UlanziDeck\Plugins\com.ulanzi.clanzi.ulanziPlugin`에 복사한다. 실행 중 생긴 `state/`, `logs/`는 다시 설치해도 남는다. Studio가 켜져 있어도 설치할 수 있고(실행 중인 도우미 exe는 이름을 바꿔 비켜 둔다), 제거할 때는 실행 중인 플러그인을 먼저 끈다. `-- --link`를 붙이면 복사 대신 저장소 폴더로 정션을 건다(개발용). 이미 저장소를 가리키는 정션이 있으면 그대로 둔다.
 - Studio 프로파일은 바꾸지 않는다. 설치 뒤 Studio를 재시작하고 키에 액션을 직접 놓는다.
 
 이미 열린 Claude Code 세션은 `/reload-plugins`를 해야 mod가 적용된다.
@@ -132,7 +134,7 @@ npm run clanzi:uninstall   # 설정 백업 → mod·마켓플레이스 제거 �
 필요한 것: Node 22.18 이상(타입 스트리핑으로 테스트 실행), npm, Claude Code 2.1.287 이상.
 
 ```sh
-npm run build        # com.ulanzi.clanzi.ulanziPlugin/plugin/app.js 생성
+npm run build        # plugin/app.js와 plugin/focus-helper.exe 생성(도우미는 소스가 바뀌었을 때만 다시 빌드)
 npm run typecheck
 npm test
 npm run preview      # 렌더러 결과를 preview/index.html로
@@ -151,6 +153,7 @@ claude plugin validate ./claude-plugin/clanzi
 ```
 src/                         Studio 플러그인 TypeScript 소스 (esbuild로 한 파일 번들)
   vendor/ulanzi-api/         공식 Node SDK 복사본 (수정 금지, VENDORED.md 참고)
+native/focus-helper.cs       창 전환 도우미 소스 (C# 5, csc.exe로 빌드)
 claude-plugin/               Claude Code 로컬 마켓플레이스 (clanzi-local)
   clanzi/                    clanzi mod
 scripts/                     빌드·개발 스크립트
@@ -158,7 +161,7 @@ test/                        단위 테스트 (node --test)
 com.ulanzi.clanzi.ulanziPlugin/
   manifest.json              UUID com.ulanzi.ulanzistudio.clanzi, 액션: 세션 슬롯, 사용량, 세션 페이지(노브)
   plugin/app.js              빌드 산출물 (커밋하지 않음)
-  scripts/focus-helper.ps1   창 전환 도우미 (Windows PowerShell 5.1용, UTF-8 BOM)
+  plugin/focus-helper.exe    창 전환 도우미 빌드 산출물 (커밋하지 않음)
   state/, logs/              실행 중 생기는 파일 (커밋하지 않음)
   resources/                 아이콘
   en.json, ko_KR.json        현지화
