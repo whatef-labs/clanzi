@@ -99,10 +99,12 @@ test('세션 타일: 점·테두리·배경색으로 상태를 구분하고 문�
   for (const svg of [idle, on, off, waitingDim]) assert.match(svg, /<rect x="6"[^>]*fill="none"/);
 });
 
-test('세션 타일: 빈 슬롯은 라벨 없이 빈 아이콘만', () => {
+test('세션 타일: 빈 슬롯은 패널·라벨 없이 빈 아이콘만', () => {
   const empty = renderSessionTile({ status: 'empty', label: 'ignored' });
   assert.doesNotMatch(empty, /<text/);
+  assert.doesNotMatch(empty, /<rect x="6"/);
   assert.equal(countCircles(empty), 1);
+  assert.match(empty, new RegExp(`stroke="${COLOR.empty}"`));
 });
 
 test('세션 타일: 라벨의 특수문자를 이스케이프한다', () => {

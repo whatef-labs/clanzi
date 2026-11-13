@@ -45,8 +45,9 @@ function palette(status: Exclude<SessionStatus, 'empty'>, dim: boolean): Palette
 
 export function renderSessionTile({ status, label, dim = false }: SessionTileInput): string {
   if (status === 'empty') {
-    const emptyIcon = `<circle cx="98" cy="98" r="22" fill="none" stroke="${COLOR.faint}" stroke-width="4" stroke-dasharray="7 7"/>`;
-    return svgDoc(KEY_SIZE, KEY_SIZE, panel(COLOR.panel, COLOR.border) + emptyIcon);
+    // 빈 슬롯은 패널 없이 검은 바탕에 점선 원 아이콘만 둔다.
+    const emptyIcon = `<circle cx="98" cy="98" r="22" fill="none" stroke="${COLOR.empty}" stroke-width="4" stroke-dasharray="7 7"/>`;
+    return svgDoc(KEY_SIZE, KEY_SIZE, `<rect width="${KEY_SIZE}" height="${KEY_SIZE}" fill="#000000"/>` + emptyIcon);
   }
 
   const p = palette(status, dim);

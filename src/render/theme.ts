@@ -5,7 +5,7 @@ export const COLOR = {
   track: '#2A2C33',
   text: '#F3F4F6',
   muted: '#9CA3AF',
-  faint: '#3A3D47',
+  empty: '#6B7280',
   dark: '#111111',
 
   idle: '#6B7280',
