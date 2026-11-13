@@ -60,20 +60,23 @@ export function renderSessionTile({ status, label, subtitle, dim = false, hold }
     return svgDoc(KEY_SIZE, KEY_SIZE, `<rect width="${KEY_SIZE}" height="${KEY_SIZE}" fill="#000000"/>` + emptyIcon);
   }
 
+  const body = (fill: string) => (subtitle?.trim() ? labelWithSubtitle(label ?? '', subtitle, fill) : labelOnly(label ?? '', fill));
+
+  // 강제 종료하려고 누르고 있는 동안: 빨간 테두리에 빨간 면이 아래에서 차오르고, 이름은 흰 글자로 계속 보인다.
+  if (hold !== undefined) {
+    return svgDoc(KEY_SIZE, KEY_SIZE, panel('none', COLOR.error) + holdFill(hold) + body(COLOR.text));
+  }
+
   const p = palette(status, dim);
   const dot = p.dot ? `<circle cx="162" cy="36" r="12" fill="${p.dot}"/>` : '';
-  const body = subtitle?.trim() ? labelWithSubtitle(label ?? '', subtitle, p.label) : labelOnly(label ?? '', p.label);
-  return svgDoc(KEY_SIZE, KEY_SIZE, panel(p.fill, p.stroke) + dot + body + holdRing(hold));
+  return svgDoc(KEY_SIZE, KEY_SIZE, panel(p.fill, p.stroke) + dot + body(p.label));
 }
 
-/** 패널 테두리를 따라 빨갛게 차오르는 진행 표시. 둥근 사각형(184x184, 모서리 24) 둘레 기준. */
-function holdRing(hold: number | undefined): string {
-  if (hold === undefined) return '';
+/** 패널(184x184, 모서리 24) 안에서 진행률만큼 아래부터 차오르는 빨간 면. */
+function holdFill(hold: number): string {
   const side = KEY_SIZE - 12;
-  const radius = 24;
-  const perimeter = 4 * (side - 2 * radius) + 2 * Math.PI * radius;
-  const filled = Math.max(0, Math.min(1, hold)) * perimeter;
-  return `<rect x="6" y="6" width="${side}" height="${side}" rx="${radius}" fill="none" stroke="${COLOR.error}" stroke-width="8" stroke-dasharray="${filled.toFixed(1)} ${perimeter.toFixed(1)}"/>`;
+  const height = Math.max(1, side * Math.max(0, Math.min(1, hold)));
+  return `<rect x="6" y="${(6 + side - height).toFixed(1)}" width="${side}" height="${height.toFixed(1)}" rx="24" fill="${COLOR.error}" fill-opacity="0.85"/>`;
 }
 
 /** 폴더 이름만: 한두 줄로 세로 가운데. */

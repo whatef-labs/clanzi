@@ -173,14 +173,20 @@ function countCircles(svg: string): number {
   return svg.match(/<circle/g)?.length ?? 0;
 }
 
-test('세션 타일: 길게 누르는 동안 빨간 테두리가 진행률만큼 차오른다', () => {
+test('세션 타일: 길게 누르는 동안 빨간 면이 아래에서 진행률만큼 차오르고 이름은 흰색', () => {
   const none = renderSessionTile({ status: 'working', label: 'clanzi' });
-  const half = renderSessionTile({ status: 'working', label: 'clanzi', hold: 0.5 });
+  const half = renderSessionTile({ status: 'waiting', label: 'clanzi', hold: 0.5 });
   const full = renderSessionTile({ status: 'working', label: 'clanzi', hold: 1 });
-  assert.doesNotMatch(none, new RegExp(`stroke="${COLOR.error}"`));
-  const dash = (svg: string) => svg.match(/stroke-dasharray="([\d.]+) ([\d.]+)"/)?.slice(1).map(Number) ?? [];
-  const [halfFilled, perimeter] = dash(half);
-  assert.ok(perimeter && Math.abs((halfFilled ?? 0) - perimeter / 2) < 1);
-  const [fullFilled, fullPerimeter] = dash(full);
-  assert.equal(fullFilled, fullPerimeter);
+  assert.doesNotMatch(none, new RegExp(`fill="${COLOR.error}"`));
+
+  const rise = (svg: string) => {
+    const m = svg.match(new RegExp(`<rect x="6" y="([\\d.]+)" width="184" height="([\\d.]+)" rx="24" fill="${COLOR.error}"`));
+    return m ? { y: Number(m[1]), height: Number(m[2]) } : null;
+  };
+  assert.deepEqual(rise(half), { y: 98, height: 92 });
+  assert.deepEqual(rise(full), { y: 6, height: 184 });
+  // 상태(입력 대기의 주황 배경·점)는 가리고, 이름은 흰색
+  assert.doesNotMatch(half, /<circle/);
+  assert.match(half, new RegExp(`stroke="${COLOR.error}"`));
+  assert.match(half, new RegExp(`<text[^>]*fill="${COLOR.text}"[^>]*>clanzi</text>`));
 });
